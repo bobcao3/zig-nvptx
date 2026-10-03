@@ -3012,11 +3012,10 @@ fn airIsNonNull(
             operand;
         if (payload_ty.isSlice(zcu)) {
             const slice_ptr = try self.wip.extractValue(loaded, &.{0}, "");
-            const ptr_ty = try o.builder.ptrType(llvm.toLlvmAddressSpace(
-                payload_ty.ptrAddressSpace(zcu),
-                zcu.getTarget(),
-            ));
-            return self.wip.icmp(cond, slice_ptr, try o.builder.nullValue(ptr_ty), "");
+            return self.wip.icmp(cond, slice_ptr, (try o.lowerNullPtr(payload_ty)).toValue(), "");
+        }
+        if (optional_ty.isPtrLikeOptional(zcu)) {
+            return self.wip.icmp(cond, loaded, (try o.lowerNullPtr(optional_ty)).toValue(), "");
         }
         return self.wip.icmp(cond, loaded, try o.builder.zeroInitValue(try o.lowerType(optional_ty, .as_value)), "");
     }
@@ -5442,8 +5441,11 @@ fn airCmpxchg(
     const success_bit = try self.wip.extractValue(result, &.{1}, "");
 
     if (optional_ty.optionalReprIsPayload(zcu)) {
-        const zero = try o.builder.zeroInitValue(payload.typeOfWip(&self.wip));
-        return self.wip.select(.normal, success_bit, zero, payload, "");
+        const null_payload = if (optional_ty.isPtrLikeOptional(zcu))
+            (try o.lowerNullPtr(optional_ty)).toValue()
+        else
+            try o.builder.zeroInitValue(payload.typeOfWip(&self.wip));
+        return self.wip.select(.normal, success_bit, null_payload, payload, "");
     }
 
     assert(!isByRef(operand_ty, zcu)); // can only cmpxchg non-by-ref types
@@ -6616,10 +6618,17 @@ fn airPrefetch(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Val
 }
 
 fn airAddrSpaceCast(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value {
+    const o = self.object;
+    const zcu = o.zcu;
     const ty_op = self.air.instructions.items(.data)[@backingInt(inst)].ty_op;
     const inst_ty = self.typeOfIndex(inst);
+    const operand_ty = self.typeOf(ty_op.operand);
     const operand = try self.resolveInst(ty_op.operand);
-    return self.wip.cast(.addrspacecast, operand, try self.object.lowerType(inst_ty, .as_value), "");
+    const result = try self.wip.cast(.addrspacecast, operand, try o.lowerType(inst_ty, .as_value), "");
+    if (operand_ty.zigTypeTag(zcu) != .optional) return result;
+    if (operand_ty.nullPtrAddress(zcu) == 0 and inst_ty.nullPtrAddress(zcu) == 0) return result;
+    const is_null = try self.wip.icmp(.eq, operand, (try o.lowerNullPtr(operand_ty)).toValue(), "");
+    return self.wip.select(.normal, is_null, (try o.lowerNullPtr(inst_ty)).toValue(), result, "");
 }
 
 fn workIntrinsic(

@@ -1504,14 +1504,15 @@ pub const Object = struct {
                 const ptr_align = Type.ptrAbiAlignment(zcu.getTarget());
 
                 if (ty.isSlice(zcu)) {
+                    const slice_ptr_ty = ty.slicePtrFieldType(zcu);
                     const debug_ptr_type = try o.builder.debugMemberType(
                         try o.builder.metadataString("ptr"),
                         null, // file
                         ty_fwd_ref,
                         0, // line
-                        try o.getDebugType(pt, ty.slicePtrFieldType(zcu)),
-                        ptr_size * 8,
-                        ptr_align.toByteUnits().? * 8,
+                        try o.getDebugType(pt, slice_ptr_ty),
+                        slice_ptr_ty.abiSize(zcu) * 8,
+                        slice_ptr_ty.abiAlignment(zcu).toByteUnits().? * 8,
                         0, // offset
                     );
 
@@ -1547,8 +1548,8 @@ pub const Object = struct {
                     o.debug_compile_unit.unwrap().?, // scope
                     0, // line
                     try o.getDebugType(pt, ty.childType(zcu)),
-                    ptr_size * 8,
-                    ptr_align.toByteUnits().? * 8,
+                    ty.abiSize(zcu) * 8,
+                    ty.abiAlignment(zcu).toByteUnits().? * 8,
                     0, // offset
                 );
             },
@@ -3393,8 +3394,14 @@ pub const Object = struct {
                 if (ty.optionalReprIsPayload(zcu)) return switch (opt.val) {
                     .none => switch (llvm_ty.tag(&o.builder)) {
                         .integer => try o.builder.intConst(llvm_ty, 0),
-                        .pointer => try o.builder.nullConst(llvm_ty),
-                        .structure => try o.builder.zeroInitConst(llvm_ty),
+                        .pointer => try o.lowerNullPtr(ty),
+                        .structure => if (ty.nullPtrAddress(zcu) == 0)
+                            try o.builder.zeroInitConst(llvm_ty)
+                        else
+                            try o.builder.structConst(llvm_ty, &.{
+                                try o.lowerNullPtr(ty),
+                                try o.builder.intConst(llvm_ty.structFields(&o.builder)[1], 0),
+                            }),
                         else => unreachable,
                     },
                     else => |payload| try o.lowerValue(payload, repr),
@@ -3932,6 +3939,17 @@ pub const Object = struct {
         };
     }
 
+    /// Returns the null pointer of the pointer, slice or optional pointer type `ty`.
+    pub fn lowerNullPtr(o: *Object, ty: Type) Allocator.Error!Builder.Constant {
+        const zcu = o.zcu;
+        const address_space = ty.ptrAddressSpace(zcu);
+        const llvm_ty = try o.builder.ptrType(toLlvmAddressSpace(address_space, zcu.getTarget()));
+        const address = ty.nullPtrAddress(zcu);
+        if (address == 0) return o.builder.nullConst(llvm_ty);
+        const llvm_usize = try o.lowerType(.usize, .as_value);
+        return o.builder.castConst(.inttoptr, try o.builder.intConst(llvm_usize, address), llvm_ty);
+    }
+
     pub fn lowerPtrToVoid(
         o: *Object,
         /// Must not be `.default`.
@@ -4371,6 +4389,7 @@ pub fn toLlvmCallConv(cc: std.lang.CallingConvention, target: *const std.Target)
             std.lang.CallingConvention.CommonOptions,
             => .{ pl.incoming_stack_alignment, 0, 0 },
             std.lang.CallingConvention.X86RegparmOptions => .{ pl.incoming_stack_alignment, pl.register_params, 0 },
+            std.lang.CallingConvention.NvptxKernelOptions,
             std.lang.CallingConvention.SpirvKernelOptions,
             std.lang.CallingConvention.SpirvFragmentOptions,
             std.lang.CallingConvention.SpirvMeshOptions,

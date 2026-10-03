@@ -1,0 +1,15 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn a() callconv(.naked) void {}
+export fn b() callconv(.amdgcn_kernel) void {}
+#}
+#update
+#check errors {
+tmp.zig:1:25: error: calling convention 'naked' not supported by compiler backend 'stage2_nvptx'
+tmp.zig:2:25: error: calling convention 'amdgcn_kernel' only available on architectures 'amdgcn'
+#}

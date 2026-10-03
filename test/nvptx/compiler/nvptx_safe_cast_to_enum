@@ -1,0 +1,16 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const E = enum(u33) { a, b, c };
+
+export fn kernel(out: *addrspace(.global) u33, in: *addrspace(.global) const u33) callconv(.kernel) void {
+    const e: E = @fromBackingInt(in.*);
+    out.* = @backingInt(e);
+}
+#}
+#update
+#check errors

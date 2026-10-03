@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+var tile: u32 addrspace(.shared) = 5;
+export fn entry(out: *u32) callconv(.kernel) void {
+    out.* = tile;
+}
+#}
+#update
+#check errors {
+tmp.zig:1:1: error: a variable in '.shared' cannot have an initial value
+error: cannot lower a global variable to PTX
+#}

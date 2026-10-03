@@ -1,0 +1,16 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry() callconv(.{ .nvptx_kernel = .{
+    .max_work_group_size = .{ .x = 64 },
+    .required_work_group_size = .{ .x = 64 },
+} }) void {}
+#}
+#update
+#check errors {
+tmp.zig:1:29: error: 'max_work_group_size' and 'required_work_group_size' cannot both be set
+#}

@@ -8791,6 +8791,21 @@ fn checkReturnTypeAndCallConv(
                 return sema.fail(block, callconv_src, "'pixel_centered_integer' is not supported on this target", .{});
             }
         },
+        .nvptx_kernel => |kernel| {
+            const Dim3 = std.lang.CallingConvention.NvptxKernelOptions.Dim3;
+            for ([_]?Dim3{ kernel.max_work_group_size, kernel.required_work_group_size, kernel.cluster_size }) |opt_size| {
+                const size = opt_size orelse continue;
+                if (size.x == 0 or size.y == 0 or size.z == 0) {
+                    return sema.fail(block, callconv_src, "kernel work group and cluster sizes must be at least 1", .{});
+                }
+            }
+            if (kernel.max_work_group_size != null and kernel.required_work_group_size != null) {
+                return sema.fail(block, callconv_src, "'max_work_group_size' and 'required_work_group_size' cannot both be set", .{});
+            }
+            if (kernel.min_work_groups_per_sm == 0 or kernel.max_registers_per_work_item == 0) {
+                return sema.fail(block, callconv_src, "kernel options must be at least 1", .{});
+            }
+        },
         .spirv_kernel => |kernel| {
             if (kernel.x == 0 or kernel.y == 0 or kernel.z == 0) {
                 return sema.fail(block, callconv_src, "kernel workgroup dimensions must be at least 1", .{});
@@ -15479,7 +15494,8 @@ fn zirAsm(
                 }),
             },
 
-            .array => return sema.failWithOwnedErrorMsg(block, msg: {
+            // The PTX backend writes an array operand as a register list.
+            .array => if (std.zig.compilerBackend(zcu.getTarget(), zcu.comp.config.use_llvm) != .stage2_nvptx) return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(output_src, "invalid inline assembly output type '{f}'", .{out_ty.fmt(zcu)});
                 errdefer msg.destroy(gpa);
                 try sema.errNote(output_src, msg, "array types cannot be passed to inline assembly", .{});
@@ -21525,13 +21541,25 @@ fn zirPtrFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!
     try sema.requireRuntimeBlock(block, src, operand_src);
     try sema.checkLogicalPtrOperation(block, src, ptr_ty);
     if (block.wantSafety()) {
+        const target = zcu.getTarget();
+        const null_address = ptr_ty.nullPtrAddress(zcu);
+        const null_address_splat: Air.Inst.Ref = .fromValue(
+            try sema.splat(operand_ty, try pt.intValue(.usize, null_address)),
+        );
         if (!ptr_ty.isAllowzeroPtr(zcu)) {
-            const is_non_zero = if (is_vector) all_non_zero: {
-                const zero_usize = Air.internedToRef((try sema.splat(operand_ty, .zero_usize)).toIntern());
-                const is_non_zero = try block.addCmpVector(operand_coerced, zero_usize, .neq);
-                break :all_non_zero try block.addReduce(is_non_zero, .And);
-            } else try block.addBinOp(.cmp_neq, operand_coerced, .zero_usize);
-            try sema.addSafetyCheck(block, src, is_non_zero, .cast_to_null);
+            const is_non_null = if (is_vector) all_non_null: {
+                const is_non_null = try block.addCmpVector(operand_coerced, null_address_splat, .neq);
+                break :all_non_null try block.addReduce(is_non_null, .And);
+            } else try block.addBinOp(.cmp_neq, operand_coerced, null_address_splat);
+            try sema.addSafetyCheck(block, src, is_non_null, .cast_to_null);
+        }
+        if (target.addressSpacePtrBitWidth(ptr_ty.ptrAddressSpace(zcu)) < target.ptrBitWidth()) {
+            const max = try sema.splat(operand_ty, try pt.intValue(.usize, maxPtrAddress(zcu, ptr_ty)));
+            const fits = if (is_vector) all_fit: {
+                const fits = try block.addCmpVector(operand_coerced, .fromValue(max), .lte);
+                break :all_fit try block.addReduce(fits, .And);
+            } else try block.addBinOp(.cmp_lte, operand_coerced, .fromValue(max));
+            try sema.addSafetyCheck(block, src, fits, .integer_out_of_bounds);
         }
         if (ptr_align.compare(.gt, .@"1")) {
             const align_bytes_minus_1 = ptr_align.toByteUnits().? - 1;
@@ -21543,11 +21571,19 @@ fn zirPtrFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!
                     align_bytes_minus_1,
             ))).toIntern());
             const remainder = try block.addBinOp(.bit_and, operand_coerced, align_mask);
-            const is_aligned = if (is_vector) all_aligned: {
+            var is_aligned = if (is_vector) is_aligned: {
                 const splat_zero_usize = Air.internedToRef((try sema.splat(operand_ty, .zero_usize)).toIntern());
-                const is_aligned = try block.addCmpVector(remainder, splat_zero_usize, .eq);
-                break :all_aligned try block.addReduce(is_aligned, .And);
+                break :is_aligned try block.addCmpVector(remainder, splat_zero_usize, .eq);
             } else try block.addBinOp(.cmp_eq, remainder, .zero_usize);
+            // An allowzero pointer can hold the null address, which need not be aligned.
+            if (ptr_ty.isAllowzeroPtr(zcu) and null_address != 0) {
+                const is_null = if (is_vector)
+                    try block.addCmpVector(operand_coerced, null_address_splat, .eq)
+                else
+                    try block.addBinOp(.cmp_eq, operand_coerced, null_address_splat);
+                is_aligned = try block.addBinOp(.bit_or, is_aligned, is_null);
+            }
+            if (is_vector) is_aligned = try block.addReduce(is_aligned, .And);
             try sema.addSafetyCheck(block, src, is_aligned, .incorrect_alignment);
         }
     }
@@ -21572,9 +21608,15 @@ fn ptrFromIntVal(
         return sema.failWithUseOfUndef(block, operand_src, vec_idx);
     }
     const addr = operand_val.toUnsignedInt(zcu);
-    if (!ptr_ty.isAllowzeroPtr(zcu) and addr == 0)
-        return sema.fail(block, operand_src, "pointer type '{f}' does not allow address zero", .{ptr_ty.fmt(zcu)});
-    if (addr != 0 and ptr_align != .none) {
+    const null_address = ptr_ty.nullPtrAddress(zcu);
+    if (addr > maxPtrAddress(zcu, ptr_ty))
+        return sema.fail(block, operand_src, "pointer type '{f}' cannot hold address 0x{x}", .{ ptr_ty.fmt(zcu), addr });
+    if (!ptr_ty.isAllowzeroPtr(zcu) and addr == null_address) {
+        if (null_address == 0)
+            return sema.fail(block, operand_src, "pointer type '{f}' does not allow address zero", .{ptr_ty.fmt(zcu)});
+        return sema.fail(block, operand_src, "pointer type '{f}' does not allow the null address 0x{x}", .{ ptr_ty.fmt(zcu), null_address });
+    }
+    if (addr != null_address and ptr_align != .none) {
         const masked_addr = if (ptr_ty.childType(zcu).fnPtrMaskOrNull(zcu)) |mask|
             addr & mask
         else
@@ -21588,11 +21630,17 @@ fn ptrFromIntVal(
     return switch (ptr_ty.zigTypeTag(zcu)) {
         .optional => Value.fromInterned(try pt.intern(.{ .opt = .{
             .ty = ptr_ty.toIntern(),
-            .val = if (addr == 0) .none else (try pt.ptrIntValue(ptr_ty.childType(zcu), addr)).toIntern(),
+            .val = if (addr == null_address) .none else (try pt.ptrIntValue(ptr_ty.childType(zcu), addr)).toIntern(),
         } })),
         .pointer => try pt.ptrIntValue(ptr_ty, addr),
         else => unreachable,
     };
+}
+
+/// Returns the largest address that fits in a pointer into the address space of `ptr_ty`.
+fn maxPtrAddress(zcu: *const Zcu, ptr_ty: Type) u64 {
+    const bits = zcu.getTarget().addressSpacePtrBitWidth(ptr_ty.ptrAddressSpace(zcu));
+    return @as(u64, std.math.maxInt(u64)) >> @intCast(64 - bits);
 }
 
 fn zirErrorCast(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
@@ -22191,7 +22239,7 @@ fn ptrCastFull(
             if (dest_ty.zigTypeTag(zcu) == .optional) {
                 return Air.internedToRef((try pt.nullValue(dest_ty)).toIntern());
             } else {
-                return Air.internedToRef((try pt.ptrIntValue(dest_ty, 0)).toIntern());
+                return Air.internedToRef((try pt.ptrIntValue(dest_ty, dest_ty.nullPtrAddress(zcu))).toIntern());
             }
         }
 
@@ -22327,10 +22375,11 @@ fn ptrCastFull(
 
     if (need_null_check) {
         assert(operand_ptr_int != .none);
-        const ptr_is_non_zero = try block.addBinOp(.cmp_neq, operand_ptr_int, .zero_usize);
+        const null_address = try pt.intRef(.usize, dest_ty.nullPtrAddress(zcu));
+        const ptr_is_non_null = try block.addBinOp(.cmp_neq, operand_ptr_int, null_address);
         const ok = if (src_info.flags.size == .slice and dest_info.flags.size == .slice) ok: {
-            break :ok try block.addBinOp(.bit_or, operand_len_is_zero, ptr_is_non_zero);
-        } else ptr_is_non_zero;
+            break :ok try block.addBinOp(.bit_or, operand_len_is_zero, ptr_is_non_null);
+        } else ptr_is_non_null;
         try sema.addSafetyCheck(block, src, ok, .cast_to_null);
     }
     if (need_align_check) {
@@ -29749,6 +29798,7 @@ fn callconvCoerceAllowed(
                 std.lang.CallingConvention.ShInterruptOptions => {
                     if (src_data.save != dest_data.save) return false;
                 },
+                std.lang.CallingConvention.NvptxKernelOptions,
                 std.lang.CallingConvention.SpirvKernelOptions,
                 std.lang.CallingConvention.SpirvFragmentOptions,
                 std.lang.CallingConvention.SpirvMeshOptions,
@@ -30469,12 +30519,13 @@ fn coerceCompatiblePtrs(
         else
             inst;
         const ptr_int = try block.addTyOp(.int_from_ptr, .usize, actual_ptr);
-        const is_non_zero = try block.addBinOp(.cmp_neq, ptr_int, .zero_usize);
+        const null_address = try pt.intRef(.usize, dest_ty.nullPtrAddress(zcu));
+        const is_non_null = try block.addBinOp(.cmp_neq, ptr_int, null_address);
         const ok = if (inst_ty.isSlice(zcu)) ok: {
             const len = try sema.analyzeSliceLen(block, inst_src, inst);
             const len_zero = try block.addBinOp(.cmp_eq, len, .zero_usize);
-            break :ok try block.addBinOp(.bit_or, len_zero, is_non_zero);
-        } else is_non_zero;
+            break :ok try block.addBinOp(.bit_or, len_zero, is_non_null);
+        } else is_non_null;
         try sema.addSafetyCheck(block, inst_src, ok, .cast_to_null);
     }
     const new_ptr: Air.Inst.Ref = switch (inst_ty.toIntern()) {

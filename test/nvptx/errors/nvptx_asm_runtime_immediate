@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry(out: *u32, in: u32) callconv(.kernel) void {
+    out.* = asm volatile ("add.u32 %[r], %[r], %[n];"
+        : [r] "=r" (-> u32),
+        : [n] "n" (in),
+    );
+}
+#}
+#update
+#check errors {
+tmp.zig:1:8: error: asm input 'n' with constraint 'n' must be comptime-known
+#}

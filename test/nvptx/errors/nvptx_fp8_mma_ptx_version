@@ -1,0 +1,21 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_89+ptx83 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn multiply(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSync(.{
+        .shape = .m16n8k32,
+        .element = .e5m2,
+        .accumulator = .f32,
+    }, @as(@Vector(4, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)));
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: mma.sync.aligned needs PTX 8.4 and sm_89 or later; the target is sm_89 with PTX 8.3
+#}

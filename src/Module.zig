@@ -301,6 +301,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
 
                 // Does not apply to this architecture.
                 .stage2_spirv,
+                .stage2_nvptx,
                 .zsf_spork8,
                 .stage2_wasm,
                 => return error.PatchableFunctionEntryUnsupportedByBackend,

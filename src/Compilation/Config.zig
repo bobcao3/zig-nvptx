@@ -373,6 +373,9 @@ pub fn resolve(options: Options) ResolveError!Config {
 
         if (options.use_llvm) |x| break :b x;
 
+        // LLVM cannot emit an nvptx64 object file.
+        if (target.cpu.arch == .nvptx64) break :b false;
+
         // If we cannot use LLVM libraries, then our own backends will be a
         // better default since the LLVM backend can only produce bitcode
         // and not an object file or executable.
@@ -561,7 +564,7 @@ pub fn resolve(options: Options) ResolveError!Config {
                 else => .{ .dwarf = .@"32" },
             },
             .spirv => .nsdi,
-            .hex, .raw, .plan9 => .strip,
+            .ptx, .hex, .raw, .plan9 => .strip,
         };
     };
 

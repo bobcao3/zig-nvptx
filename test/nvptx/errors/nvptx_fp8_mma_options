@@ -1,0 +1,53 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_121a -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn wrongFragment(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSync(.{
+        .shape = .m16n8k32,
+        .element = .e4m3,
+        .accumulator = .f32,
+    }, @as(@Vector(2, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)));
+}
+
+export fn wrongScaleShape(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSyncBlockScale(.{
+        .shape = .m16n8k16,
+        .element = .e4m3,
+        .accumulator = .f32,
+    }, .{}, @as(@Vector(2, u32), @splat(0)), @as(@Vector(1, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)), 0, 0);
+}
+
+export fn wrongScaleElement(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSyncBlockScale(.{
+        .shape = .m16n8k32,
+        .element = .e4m3,
+        .b_element = .bf16,
+        .accumulator = .f32,
+    }, .{}, @as(@Vector(4, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)), 0, 0);
+}
+
+export fn wrongScaleSelector() callconv(.kernel) void {
+    const options: nv.matrix.BlockScaleOptions = .{ .a_thread = 2 };
+    _ = options;
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: mma.sync with shape m16n8k16, a e4m3, b e4m3 and accumulator f32 needs .m16n8k32 and an .f32 accumulator for block scaling
+lib/std/**.zig:?:?: note: called at comptime here
+tmp.zig:12:33: note: called inline here
+lib/std/**.zig:?:?: error: mma.sync with shape m16n8k32, a e4m3, b bf16 and accumulator f32 needs .e4m3 or .e5m2 elements for block scaling
+lib/std/**.zig:?:?: note: called at comptime here
+tmp.zig:20:33: note: called inline here
+lib/std/**.zig:?:?: error: mma.sync with shape m16n8k32, a e4m3, b e4m3 and accumulator f32 needs a of type '@Vector(4, u32)', found '@Vector(2, u32)'
+lib/std/**.zig:?:?: note: called at comptime here
+lib/std/**.zig:?:?: note: called at comptime here
+tmp.zig:4:23: note: called inline here
+tmp.zig:29:65: error: type 'u1' cannot represent integer value '2'
+#}

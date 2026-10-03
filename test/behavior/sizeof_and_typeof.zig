@@ -341,6 +341,7 @@ comptime {
 
 test "Extern function calls in @TypeOf" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const S = extern struct {
         state: c_short,

@@ -277,6 +277,7 @@ test "forced tail call" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
@@ -312,6 +313,7 @@ test "inline call preserves tail call" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
@@ -642,6 +644,7 @@ test "arguments pointed to on stack into tailcall" {
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_x86_64) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support always tail calls
 
     switch (builtin.cpu.arch) {
@@ -717,6 +720,7 @@ test "tail call function pointer" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
@@ -746,6 +750,7 @@ test "tail call with potentially extended types" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_x86_64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {

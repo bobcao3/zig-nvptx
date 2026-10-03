@@ -258,6 +258,16 @@ pub fn binNameAlloc(allocator: Allocator, options: BinNameOptions) error{OutOfMe
             .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
         },
         .c => return std.fmt.allocPrint(allocator, "{s}.c", .{root_name}),
+        .ptx => switch (options.output_mode) {
+            .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
+            .Lib => switch (options.link_mode orelse .static) {
+                .static => return std.fmt.allocPrint(allocator, "{s}{s}.a", .{
+                    options.os_tag.libPrefix(options.abi), root_name,
+                }),
+                .dynamic => return std.fmt.allocPrint(allocator, "{s}.ptx", .{root_name}),
+            },
+            .Exe => return std.fmt.allocPrint(allocator, "{s}.ptx", .{root_name}),
+        },
         .spirv => return std.fmt.allocPrint(allocator, "{s}.spv", .{root_name}),
         .hex => return std.fmt.allocPrint(allocator, "{s}.ihex", .{root_name}),
         .raw => return std.fmt.allocPrint(allocator, "{s}.bin", .{root_name}),
@@ -270,6 +280,28 @@ pub fn binNameAlloc(allocator: Allocator, options: BinNameOptions) error{OutOfMe
                 options.os_tag.libPrefix(options.abi), root_name,
             }),
         },
+    }
+}
+
+test binNameAlloc {
+    const gpa = std.testing.allocator;
+    const expected = [_]struct { std.lang.OutputMode, []const u8 }{
+        .{ .Obj, "x.o" },
+        .{ .Lib, "libx.a" },
+        .{ .Exe, "x.ptx" },
+    };
+    for (expected) |entry| {
+        const output_mode, const file_name = entry;
+        const name = try binNameAlloc(gpa, .{
+            .root_name = "x",
+            .cpu_arch = .nvptx64,
+            .os_tag = .cuda,
+            .ofmt = .default(.cuda, .nvptx64),
+            .abi = .none,
+            .output_mode = output_mode,
+        });
+        defer gpa.free(name);
+        try std.testing.expectEqualStrings(file_name, name);
     }
 }
 
@@ -2065,6 +2097,7 @@ pub fn compilerBackend(t: *const std.Target, use_llvm: bool) std.lang.CompilerBa
         .loongarch32, .loongarch64 => .stage2_loongarch,
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => .stage2_powerpc,
         .riscv64 => .stage2_riscv64,
+        .nvptx64 => .stage2_nvptx,
         .sparc64 => .stage2_sparc64,
         .spirv32, .spirv64 => .stage2_spirv,
         .wasm32, .wasm64 => .stage2_wasm,

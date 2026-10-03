@@ -76,6 +76,7 @@ pub const enums = @import("enums.zig");
 pub const fmt = @import("fmt.zig");
 pub const fs = @import("fs.zig");
 pub const spirv = @import("spirv.zig");
+pub const nvptx = @import("nvptx.zig");
 pub const hash = @import("hash.zig");
 pub const hash_map = @import("hash_map.zig");
 pub const heap = @import("heap.zig");

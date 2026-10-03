@@ -1,0 +1,32 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const builtin = @import("builtin");
+
+fn auto(x: u32) u32 {
+    return x +% 1;
+}
+fn device(x: u32) callconv(.nvptx_device) u32 {
+    return x *% 3;
+}
+export fn exported(x: u32) callconv(.c) u32 {
+    return @call(.never_inline, auto, .{x});
+}
+export fn kernel(out: *u32) callconv(.kernel) void {
+    comptime if (builtin.zig_backend != .stage2_nvptx) unreachable;
+    out.* = exported(device(out.*));
+}
+export fn tuned(out: *u32) callconv(.{ .nvptx_kernel = .{
+    .max_work_group_size = .{ .x = 128, .y = 2 },
+    .min_work_groups_per_sm = 1,
+    .max_registers_per_work_item = 32,
+} }) void {
+    out.* = 0;
+}
+#}
+#update
+#check errors

@@ -1,0 +1,19 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn kernel(
+    single: *addrspace(.global) @Vector(4, f32),
+    double: *addrspace(.global) @Vector(2, f64),
+    half: *addrspace(.global) @Vector(4, f16),
+) callconv(.kernel) void {
+    single.* = @sin(single.*) + @log10(single.*);
+    double.* = @exp2(double.*);
+    half.* = @cos(half.*);
+}
+#}
+#update
+#check errors

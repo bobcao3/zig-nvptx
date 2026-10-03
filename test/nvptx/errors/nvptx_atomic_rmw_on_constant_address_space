@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const counter: u32 addrspace(.constant) = 0;
+
+export fn entry(out: *addrspace(.global) u32) callconv(.kernel) void {
+    out.* = @atomicRmw(u32, @constCast(&counter), .Add, 1, .monotonic);
+}
+#}
+#update
+#check errors {
+tmp.zig:3:8: error: atomic access to address space 'constant'
+#}

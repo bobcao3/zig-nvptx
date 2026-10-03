@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nvptx = @import("std").nvptx;
+export fn entry() callconv(.kernel) void {
+    _ = nvptx.matrix.MmaSyncShape.fromMnk(16, 16, 16);
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: mma.sync has no shape m16n16k16
+tmp.zig:3:42: note: called inline here
+#}

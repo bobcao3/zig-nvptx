@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nvptx = @import("std").nvptx;
+var barrier: nvptx.Mbarrier addrspace(.shared) = undefined;
+export fn entry() callconv(.kernel) void {
+    _ = barrier.tryWaitParity(0);
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: mbarrier.try_wait.parity needs PTX 7.8 and sm_90 or later; the target is sm_52 with PTX 6.3
+#}

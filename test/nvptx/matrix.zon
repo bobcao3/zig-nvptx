@@ -1,0 +1,9 @@
+.{
+    .{
+        .cpu = .{ .nvptx64 = .{} },
+        .os = .{ .cuda = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .selfhosted,
+    },
+}

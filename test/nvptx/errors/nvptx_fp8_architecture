@@ -1,0 +1,35 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80+ptx90 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn convert(out: *u16, x: f32) callconv(.kernel) void {
+    out.* = @backingInt(nv.E4m3x2.fromF32(x, x));
+}
+
+export fn multiply(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSync(.{
+        .shape = .m16n8k32,
+        .element = .e4m3,
+        .accumulator = .f32,
+    }, @as(@Vector(4, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)));
+}
+
+export fn multiplyScaled(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSyncBlockScale(.{
+        .shape = .m16n8k32,
+        .element = .e4m3,
+        .accumulator = .f32,
+    }, .{}, @as(@Vector(4, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)), 0, 0);
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: cvt.rn.satfinite.e4m3x2.f32 needs PTX 8.1 and sm_89 or later; the target is sm_80 with PTX 9.0
+lib/std/**.zig:?:?: error: mma.sync.aligned needs PTX 8.4 and sm_89 or later; the target is sm_80 with PTX 9.0
+lib/std/**.zig:?:?: error: mma.sync.aligned.kind::mxf8f6f4.block_scale needs PTX 8.8 and sm_120a, sm_120f, sm_121a or sm_121f; the target is sm_80 with PTX 9.0
+#}

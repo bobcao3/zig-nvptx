@@ -1,0 +1,21 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+fn isEven(n: u32) bool {
+    return if (n == 0) true else isOdd(n - 1);
+}
+
+fn isOdd(n: u32) bool {
+    return if (n == 0) false else isEven(n - 1);
+}
+
+export fn kernel(out: *addrspace(.global) bool, n: u32) callconv(.kernel) void {
+    out.* = isEven(n);
+}
+#}
+#update
+#check errors

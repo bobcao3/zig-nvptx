@@ -680,8 +680,8 @@ pub const File = struct {
                 base.file = mf.memory_map.file;
                 try mf.ensureTotalCapacity(@intCast(mf.nodes.items[0].location().resolve(mf)[1]));
             },
-            .c, .spirv => if (base.file == null) {
-                dev.checkAny(&.{ .c_linker, .spirv_linker });
+            .c, .spirv, .nvptx => if (base.file == null) {
+                dev.checkAny(&.{ .c_linker, .spirv_linker, .nvptx_linker });
                 base.file = try base.emit.root_dir.handle.openFile(io, base.emit.sub_path, .{
                     .mode = .write_only,
                 });
@@ -771,7 +771,7 @@ pub const File = struct {
                 mf.memory_map.file = undefined;
                 base.file = null;
             },
-            .c, .spirv => dev.checkAny(&.{ .c_linker, .spirv_linker }),
+            .c, .spirv, .nvptx => dev.checkAny(&.{ .c_linker, .spirv_linker, .nvptx_linker }),
             .plan9 => unreachable,
             .spork8 => dev.check(.spork8_linker),
         }
@@ -806,7 +806,7 @@ pub const File = struct {
         log.debug("getGlobalSymbol '{s}' (expected in '{?s}')", .{ name, lib_name });
         switch (base.tag) {
             .lld => unreachable,
-            .spirv => unreachable,
+            .spirv, .nvptx => unreachable,
             .c => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -919,7 +919,7 @@ pub const File = struct {
             .lld => unreachable,
             .llvm => unreachable,
             .plan9 => unreachable,
-            .spirv => {},
+            .spirv, .nvptx => {},
             .coff => {},
             .macho2 => {},
             inline else => |tag| {
@@ -1082,7 +1082,7 @@ pub const File = struct {
             .lld => unreachable,
             .llvm => unreachable,
             .c => unreachable,
-            .spirv => unreachable,
+            .spirv, .nvptx => unreachable,
             .wasm => unreachable,
             .plan9 => unreachable,
             .spork8 => unreachable,
@@ -1105,7 +1105,7 @@ pub const File = struct {
             .lld => unreachable,
             .llvm => unreachable,
             .c => unreachable,
-            .spirv => unreachable,
+            .spirv, .nvptx => unreachable,
             .wasm => unreachable,
             .plan9 => unreachable,
             .spork8 => unreachable,
@@ -1123,7 +1123,7 @@ pub const File = struct {
             .lld => unreachable,
             .llvm => unreachable,
             .c => unreachable,
-            .spirv => unreachable,
+            .spirv, .nvptx => unreachable,
             .wasm => unreachable,
             .plan9 => unreachable,
             .spork8 => unreachable,
@@ -1149,6 +1149,7 @@ pub const File = struct {
             .c,
             .wasm,
             .spirv,
+            .nvptx,
             .plan9,
             .lld,
             .llvm,
@@ -1386,6 +1387,7 @@ pub const File = struct {
         c,
         wasm,
         spirv,
+        nvptx,
         spork8,
         plan9,
         lld,
@@ -1401,6 +1403,7 @@ pub const File = struct {
                 .c => C,
                 .wasm => Wasm,
                 .spirv => Spirv,
+                .nvptx => Nvptx,
                 .lld => Lld,
                 .plan9 => unreachable,
                 .spork8 => Spork8,
@@ -1416,6 +1419,7 @@ pub const File = struct {
                 .wasm => .wasm,
                 .plan9 => .plan9,
                 .c => .c,
+                .ptx => .nvptx,
                 .spirv => .spirv,
                 .hex => @panic("TODO implement hex object format"),
                 // This may seem surprising at first, but with a little massaging, the spork8 linker
@@ -1507,6 +1511,7 @@ pub const File = struct {
     pub const MachO = @import("link/MachO.zig");
     pub const MachO2 = @import("link/MachO2.zig");
     pub const Spirv = @import("link/Spirv.zig");
+    pub const Nvptx = @import("link/Nvptx.zig");
     pub const Wasm = @import("link/Wasm.zig");
     pub const Dwarf = @import("link/Dwarf.zig");
     pub const Dwarf2 = @import("link/Dwarf2.zig");

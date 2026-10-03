@@ -1046,6 +1046,8 @@ pub const ObjectFormat = enum {
     macho,
     /// The a.out format used by Plan 9 from Bell Labs.
     plan9,
+    /// NVIDIA's Parallel Thread Execution assembly.
+    ptx,
     /// Machine code with no metadata.
     raw,
     /// The Khronos Group's Standard Portable Intermediate Representation V.
@@ -1062,9 +1064,14 @@ pub const ObjectFormat = enum {
             .llvmbc => ".bc",
             .llvmir => ".ll",
             .plan9 => arch.plan9Ext(),
+            .ptx => ".ptx",
             .raw => ".bin",
             .spirv => ".spv",
         };
+    }
+
+    test fileExt {
+        try std.testing.expectEqualStrings(".ptx", ObjectFormat.ptx.fileExt(.nvptx64));
     }
 
     pub fn default(os_tag: Os.Tag, arch: Cpu.Arch) ObjectFormat {
@@ -1073,12 +1080,18 @@ pub const ObjectFormat = enum {
             .plan9 => .plan9,
             .uefi, .windows => .coff,
             else => switch (arch) {
+                .nvptx, .nvptx64 => .ptx,
                 .spirv32, .spirv64 => .spirv,
                 .wasm32, .wasm64 => .wasm,
                 .spork8 => .raw,
                 else => .elf,
             },
         };
+    }
+
+    test default {
+        try std.testing.expectEqual(.ptx, default(.cuda, .nvptx));
+        try std.testing.expectEqual(.ptx, default(.cuda, .nvptx64));
     }
 };
 
@@ -3103,6 +3116,53 @@ pub fn ptrBitWidth_arch_abi(cpu_arch: Cpu.Arch, abi: Abi) u16 {
 
 pub fn ptrBitWidth(target: *const Target) u16 {
     return ptrBitWidth_cpu_abi(target.cpu, target.abi);
+}
+
+/// Returns the bit width of a pointer into `address_space`. Some GPU address spaces are smaller
+/// than 4 GiB, and their pointers are narrower than `ptrBitWidth`.
+pub fn addressSpacePtrBitWidth(target: *const Target, address_space: std.lang.AddressSpace) u16 {
+    return switch (target.cpu.arch) {
+        .nvptx64 => switch (address_space) {
+            .constant, .local, .shared => 32,
+            else => target.ptrBitWidth(),
+        },
+        .amdgcn => switch (address_space) {
+            .local, .shared => 32,
+            else => target.ptrBitWidth(),
+        },
+        else => target.ptrBitWidth(),
+    };
+}
+
+/// Returns the address that a null pointer into `address_space` holds. In some GPU address
+/// spaces, 0 is a valid address, so a null pointer holds the all-ones address instead.
+pub fn nullPtrAddress(target: *const Target, address_space: std.lang.AddressSpace) u64 {
+    return switch (target.cpu.arch) {
+        .nvptx, .nvptx64 => switch (address_space) {
+            .constant, .local, .shared => std.math.maxInt(u32),
+            else => 0,
+        },
+        .amdgcn => switch (address_space) {
+            .local, .shared => std.math.maxInt(u32),
+            else => 0,
+        },
+        else => 0,
+    };
+}
+
+test "pointers into GPU address spaces" {
+    const os: Os = .{ .tag = .cuda, .version_range = .default(.nvptx64, .cuda, .none) };
+    const nvptx64: Target = .{
+        .cpu = .baseline(.nvptx64, os),
+        .os = os,
+        .abi = .none,
+        .ofmt = .elf,
+        .dynamic_linker = .none,
+    };
+    try std.testing.expectEqual(32, nvptx64.addressSpacePtrBitWidth(.shared));
+    try std.testing.expectEqual(64, nvptx64.addressSpacePtrBitWidth(.global));
+    try std.testing.expectEqual(std.math.maxInt(u32), nvptx64.nullPtrAddress(.shared));
+    try std.testing.expectEqual(0, nvptx64.nullPtrAddress(.generic));
 }
 
 pub fn stackAlignment(target: *const Target) u16 {

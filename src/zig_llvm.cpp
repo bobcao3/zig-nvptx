@@ -150,6 +150,18 @@ LLVMTargetMachineRef ZigLLVMCreateTargetMachine(LLVMTargetRef T, const char *Tri
         opt.EmulatedTLS = true;
     }
 
+    if (llvm::Triple(Triple).getArch() == llvm::Triple::nvptx64) {
+        // The NVPTX target reads the width of `.shared`, `.local` and `.constant` pointers only
+        // from this process-wide option. Zig gives these pointers 32 bits.
+        static const bool short_pointers = [] {
+            auto &options = cl::getRegisteredOptions();
+            auto it = options.find("nvptx-short-ptr");
+            if (it != options.end()) static_cast<cl::opt<bool> *>(it->second)->setValue(true);
+            return true;
+        }();
+        (void)short_pointers;
+    }
+
     TargetMachine *TM = reinterpret_cast<Target*>(T)->createTargetMachine(
         llvm::Triple(Triple),
         CPU,

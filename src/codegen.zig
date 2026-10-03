@@ -35,6 +35,7 @@ fn devFeatureForBackend(backend: std.lang.CompilerBackend) dev.Feature {
         .stage2_c => .c_backend,
         .stage2_llvm => .llvm_backend,
         .stage2_loongarch => .loongarch_backend,
+        .stage2_nvptx => .nvptx_backend,
         .stage2_powerpc => unreachable,
         .stage2_riscv64 => .riscv64_backend,
         .stage2_sparc64 => .sparc64_backend,
@@ -55,6 +56,7 @@ fn importBackend(comptime backend: std.lang.CompilerBackend) type {
         .stage2_c => @import("codegen/c.zig"),
         .stage2_llvm => @import("codegen/llvm.zig"),
         .stage2_loongarch => loongarch,
+        .stage2_nvptx => @import("codegen/nvptx/CodeGen.zig"),
         .stage2_powerpc => unreachable,
         .stage2_riscv64 => @import("codegen/riscv64/CodeGen.zig"),
         .stage2_sparc64 => @import("codegen/sparc64/CodeGen.zig"),
@@ -85,6 +87,7 @@ pub fn legalizeFeatures(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) ?*co
         .stage2_sparc64,
         .zsf_spork8,
         .stage2_spirv,
+        .stage2_nvptx,
         => |backend| {
             dev.check(devFeatureForBackend(backend));
             return importBackend(backend).legalizeFeatures(target);
@@ -113,6 +116,7 @@ pub const AnyMir = union {
     wasm: if (dev.env.supports(.wasm_backend)) @import("codegen/wasm/Mir.zig") else noreturn,
     c: if (dev.env.supports(.c_backend)) @import("codegen/c.zig").Mir else noreturn,
     spirv: if (dev.env.supports(.spirv_backend)) @import("codegen/spirv/Mir.zig") else noreturn,
+    nvptx: if (dev.env.supports(.nvptx_backend)) @import("codegen/nvptx/Mir.zig") else noreturn,
     spork8: if (dev.env.supports(.spork8_backend)) @import("codegen/spork8/Mir.zig") else noreturn,
 
     pub inline fn tag(comptime backend: std.lang.CompilerBackend) []const u8 {
@@ -125,6 +129,7 @@ pub const AnyMir = union {
             .stage2_wasm => "wasm",
             .stage2_c => "c",
             .stage2_spirv => "spirv",
+            .stage2_nvptx => "nvptx",
             .zsf_spork8 => "spork8",
             else => unreachable,
         };
@@ -143,6 +148,7 @@ pub const AnyMir = union {
             .stage2_wasm,
             .stage2_c,
             .stage2_spirv,
+            .stage2_nvptx,
             .zsf_spork8,
             => |backend_ct| @field(mir, tag(backend_ct)).deinit(gpa),
         }
@@ -175,6 +181,7 @@ pub fn generateFunction(
         .stage2_c,
         .zsf_spork8,
         .stage2_spirv,
+        .stage2_nvptx,
         => |backend| {
             dev.check(devFeatureForBackend(backend));
             const CodeGen = importBackend(backend);
@@ -1233,4 +1240,5 @@ pub fn flattenType(items_buf: []FlattenedItem, ty: Type, zcu: *Zcu, opts: struct
 test {
     _ = aarch64;
     _ = loongarch;
+    if (dev.env == .nvptx) _ = @import("codegen/nvptx/fuzz.zig");
 }

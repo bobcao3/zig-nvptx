@@ -1,0 +1,20 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const Pair = extern struct { a: u32, b: u32 };
+const Table = extern struct { values: [8]u32 };
+
+export fn kernel(pair: Pair, first: Table, second: Table, out: *addrspace(.global) u32, i: u32) callconv(.kernel) void {
+    var x: u32 = pair.a;
+    var holder: struct { ptr: *u32, n: u32 } = .{ .ptr = &x, .n = i };
+    holder.n +%= 1;
+    holder.ptr.* +%= pair.b +% holder.n;
+    out.* = x +% first.values[i % 8] +% second.values[(i + 1) % 8];
+}
+#}
+#update
+#check errors

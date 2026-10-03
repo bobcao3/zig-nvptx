@@ -149,6 +149,10 @@ pub const Feature = enum {
     /// * `.legalize_vec_store_elem`
     scalarize_bit_cast_padded_elems,
 
+    /// Limit every `scalarize_*` feature to vectors wider than 16 bytes and to vectors whose elements
+    /// are wider than 64 bits. A backend that lowers smaller vectors by itself keeps them whole.
+    scalarize_only_large_vectors,
+
     /// Legalize (shift lhs, (splat rhs)) -> (shift lhs, rhs)
     unsplat_shift_rhs,
     /// Legalize reduce of a one element vector to a bitcast.
@@ -364,6 +368,14 @@ fn getTmpAir(l: *const Legalize) Air {
     };
 }
 
+/// Returns whether the enabled `scalarize_*` features apply to operations on `ty`.
+fn scalarizes(l: *const Legalize, ty: Type) bool {
+    const zcu = l.pt.zcu;
+    if (!ty.isVector(zcu)) return false;
+    if (!l.features.has(.scalarize_only_large_vectors)) return true;
+    return ty.bitSize(zcu) > 128 or ty.childType(zcu).bitSize(zcu) > 64;
+}
+
 fn typeOf(l: *const Legalize, ref: Air.Inst.Ref) Type {
     return l.getTmpAir().typeOf(ref, &l.pt.zcu.intern_pool);
 }
@@ -455,7 +467,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
             .xor,
             => |air_tag| if (l.features.has(comptime .scalarize(air_tag))) {
                 const bin_op = l.air_instructions.items(.data)[@backingInt(inst)].bin_op;
-                if (l.typeOf(bin_op.lhs).isVector(zcu)) {
+                if (l.scalarizes(l.typeOf(bin_op.lhs))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .bin_op));
                 }
             },
@@ -464,7 +476,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 continue :inst l.replaceInst(inst, .block, try l.safeArithmeticBlockPayload(inst, .add_with_overflow));
             } else if (l.features.has(.scalarize_add_safe)) {
                 const bin_op = l.air_instructions.items(.data)[@backingInt(inst)].bin_op;
-                if (l.typeOf(bin_op.lhs).isVector(zcu)) {
+                if (l.scalarizes(l.typeOf(bin_op.lhs))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .bin_op));
                 }
             },
@@ -473,7 +485,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 continue :inst l.replaceInst(inst, .block, try l.safeArithmeticBlockPayload(inst, .sub_with_overflow));
             } else if (l.features.has(.scalarize_sub_safe)) {
                 const bin_op = l.air_instructions.items(.data)[@backingInt(inst)].bin_op;
-                if (l.typeOf(bin_op.lhs).isVector(zcu)) {
+                if (l.scalarizes(l.typeOf(bin_op.lhs))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .bin_op));
                 }
             },
@@ -482,7 +494,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 continue :inst l.replaceInst(inst, .block, try l.safeArithmeticBlockPayload(inst, .mul_with_overflow));
             } else if (l.features.has(.scalarize_mul_safe)) {
                 const bin_op = l.air_instructions.items(.data)[@backingInt(inst)].bin_op;
-                if (l.typeOf(bin_op.lhs).isVector(zcu)) {
+                if (l.scalarizes(l.typeOf(bin_op.lhs))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .bin_op));
                 }
             },
@@ -493,7 +505,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
             .shl_with_overflow,
             => |air_tag| if (l.features.has(comptime .scalarize(air_tag))) {
                 const ty_pl = l.air_instructions.items(.data)[@backingInt(inst)].ty_pl;
-                if (ty_pl.ty.fieldType(0, zcu).isVector(zcu)) {
+                if (l.scalarizes(ty_pl.ty.fieldType(0, zcu))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeOverflowBlockPayload(inst));
                 }
             },
@@ -532,7 +544,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                             }
                         }
                     }
-                    if (l.features.has(comptime .scalarize(air_tag))) {
+                    if (l.features.has(comptime .scalarize(air_tag)) and l.scalarizes(l.typeOf(bin_op.lhs))) {
                         continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .bin_op));
                     }
                 }
@@ -550,7 +562,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
             .trunc,
             => |air_tag| if (l.features.has(comptime .scalarize(air_tag))) {
                 const ty_op = l.air_instructions.items(.data)[@backingInt(inst)].ty_op;
-                if (ty_op.ty.isVector(zcu)) {
+                if (l.scalarizes(ty_op.ty) or l.scalarizes(l.typeOf(ty_op.operand))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .ty_op));
                 }
             },
@@ -653,7 +665,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 continue :inst l.replaceInst(inst, .int_cast, .{ .ty_op = ty_op });
             } else if (l.features.has(.scalarize_int_cast_safe)) {
                 const ty_op = l.air_instructions.items(.data)[@backingInt(inst)].ty_op;
-                if (ty_op.ty.isVector(zcu)) {
+                if (l.scalarizes(ty_op.ty) or l.scalarizes(l.typeOf(ty_op.operand))) {
                     continue :inst l.replaceInst(inst, .block, try l.scalarizeBlockPayload(inst, .ty_op));
                 }
             },
@@ -4003,7 +4015,7 @@ inline fn wantScalarizeOrSoftFloat(
         else => .{ false, ty },
     };
 
-    if (is_vec and l.features.has(.scalarize(air_tag))) return .scalarize;
+    if (l.scalarizes(ty) and l.features.has(.scalarize(air_tag))) return .scalarize;
 
     if (l.wantSoftFloatScalar(scalar_ty)) {
         return if (is_vec) .scalarize else .soft_float;

@@ -1857,6 +1857,7 @@ test "assign to slice.len of global variable" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const S = struct {
         const allocator = std.testing.allocator;

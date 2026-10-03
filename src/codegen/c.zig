@@ -2393,6 +2393,7 @@ pub fn genFunc(f: *Function, fwd_decl_writer: *Writer, header_writer: *Writer) E
     if (switch (fn_info.cc) {
         inline else => |pl| switch (@TypeOf(pl)) {
             void,
+            std.lang.CallingConvention.NvptxKernelOptions,
             std.lang.CallingConvention.SpirvKernelOptions,
             std.lang.CallingConvention.SpirvFragmentOptions,
             std.lang.CallingConvention.SpirvMeshOptions,

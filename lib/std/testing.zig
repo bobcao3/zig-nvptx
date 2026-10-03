@@ -34,6 +34,7 @@ pub const backend_can_print = switch (builtin.zig_backend) {
     .stage2_loongarch,
     .stage2_powerpc,
     .stage2_riscv64,
+    .stage2_nvptx,
     .stage2_spirv,
     => false,
     .stage2_llvm => !builtin.cpu.arch.isSpirv(),

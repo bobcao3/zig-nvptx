@@ -65,6 +65,7 @@ test "basic" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     try expectEqualStrings("i64", @typeName(i64));
     try expectEqualStrings("*usize", @typeName(*usize));

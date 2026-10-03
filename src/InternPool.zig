@@ -5196,6 +5196,19 @@ pub const Tag = enum(u8) {
             .trailing = struct {
                 param_comptime_bits: ?[]u32,
                 param_noalias_bits: ?[]u32,
+                nvptx_kernel_options: ?extern struct {
+                    max_work_group_size_x: u32,
+                    max_work_group_size_y: u32,
+                    max_work_group_size_z: u32,
+                    required_work_group_size_x: u32,
+                    required_work_group_size_y: u32,
+                    required_work_group_size_z: u32,
+                    min_work_groups_per_sm: u32,
+                    cluster_size_x: u32,
+                    cluster_size_y: u32,
+                    cluster_size_z: u32,
+                    max_registers_per_work_item: u32,
+                },
                 spirv_kernel_options: ?extern struct { x: u32, y: u32, z: u32 },
                 spirv_mesh_options: ?extern struct { max_primitives: u32, max_vertices: u32, x: u32, y: u32, z: u32 },
                 param_types: []Index,
@@ -5205,6 +5218,7 @@ pub const Tag = enum(u8) {
                 .@"trailing.param_comptime_bits.?.len" = .@"(payload.params_len + 31) / 32",
                 .@"trailing.param_noalias_bits.?" = .@"payload.flags.has_noalias_bits",
                 .@"trailing.param_noalias_bits.?.len" = .@"(payload.params_len + 31) / 32",
+                .@"trailing.nvptx_kernel_options.?" = .@"payload.flags.cc.tag == .nvptx_kernel",
                 .@"trailing.spirv_kernel_options.?" = .@"payload.flags.cc.tag == .spirv_kernel or payload.flags.cc.tag == .spirv_task",
                 .@"trailing.spirv_mesh_options.?" = .@"payload.flags.cc.tag == .spirv_mesh",
                 .@"trailing.param_types.len" = .@"payload.params_len",
@@ -9135,6 +9149,19 @@ pub fn getFuncType(
     if (key.comptime_bits != 0) extra.appendAssumeCapacity(.{key.comptime_bits});
     if (key.noalias_bits != 0) extra.appendAssumeCapacity(.{key.noalias_bits});
     if (key.cc) |cc| switch (cc) {
+        .nvptx_kernel => |kernel| extra.appendSliceAssumeCapacity(.{&.{
+            if (kernel.max_work_group_size) |size| size.x else 0,
+            if (kernel.max_work_group_size) |size| size.y else 0,
+            if (kernel.max_work_group_size) |size| size.z else 0,
+            if (kernel.required_work_group_size) |size| size.x else 0,
+            if (kernel.required_work_group_size) |size| size.y else 0,
+            if (kernel.required_work_group_size) |size| size.z else 0,
+            kernel.min_work_groups_per_sm orelse 0,
+            if (kernel.cluster_size) |size| size.x else 0,
+            if (kernel.cluster_size) |size| size.y else 0,
+            if (kernel.cluster_size) |size| size.z else 0,
+            kernel.max_registers_per_work_item orelse 0,
+        }}),
         .spirv_kernel, .spirv_task => |kernel| extra.appendSliceAssumeCapacity(.{&.{
             kernel.x,
             kernel.y,
@@ -12626,7 +12653,9 @@ const PackedCallingConvention = packed struct(u18) {
                     .incoming_stack_alignment = .fromByteUnits(pl.incoming_stack_alignment orelse 0),
                     .extra = @backingInt(pl.save),
                 },
-                std.lang.CallingConvention.SpirvKernelOptions => .{
+                std.lang.CallingConvention.NvptxKernelOptions,
+                std.lang.CallingConvention.SpirvKernelOptions,
+                => .{
                     .tag = tag,
                     .incoming_stack_alignment = .none,
                     .extra = 0,
@@ -12646,8 +12675,9 @@ const PackedCallingConvention = packed struct(u18) {
         };
     }
 
-    fn extraLen(cc: PackedCallingConvention) u3 {
+    fn extraLen(cc: PackedCallingConvention) u4 {
         return switch (cc.tag) {
+            .nvptx_kernel => 11,
             .spirv_kernel, .spirv_task => 3,
             .spirv_mesh => 5,
             else => 0,
@@ -12691,6 +12721,25 @@ const PackedCallingConvention = packed struct(u18) {
                     std.lang.CallingConvention.ShInterruptOptions => .{
                         .incoming_stack_alignment = cc.incoming_stack_alignment.toByteUnits(),
                         .save = @fromBackingInt(@intCast(cc.extra)),
+                    },
+                    std.lang.CallingConvention.NvptxKernelOptions => .{
+                        .max_work_group_size = if (trailing[0] == 0) null else .{
+                            .x = trailing[0],
+                            .y = trailing[1],
+                            .z = trailing[2],
+                        },
+                        .required_work_group_size = if (trailing[3] == 0) null else .{
+                            .x = trailing[3],
+                            .y = trailing[4],
+                            .z = trailing[5],
+                        },
+                        .min_work_groups_per_sm = if (trailing[6] == 0) null else trailing[6],
+                        .cluster_size = if (trailing[7] == 0) null else .{
+                            .x = trailing[7],
+                            .y = trailing[8],
+                            .z = trailing[9],
+                        },
+                        .max_registers_per_work_item = if (trailing[10] == 0) null else trailing[10],
                     },
                     std.lang.CallingConvention.SpirvKernelOptions => .{
                         .x = trailing[0],

@@ -1,0 +1,13 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry() callconv(.{ .nvptx_kernel = .{ .cluster_size = .{ .x = 2 } } }) void {}
+#}
+#update
+#check errors {
+tmp.zig:1:8: error: 'cluster_size' needs sm_90 or later
+#}

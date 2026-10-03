@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry(out: *u64, in: u64) callconv(.kernel) void {
+    out.* = asm volatile ("mov.b64 %[r], %[i];"
+        : [r] "=l" (-> u64),
+        : [i] "r" (in),
+    );
+}
+#}
+#update
+#check errors {
+tmp.zig:1:8: error: asm constraint 'r' needs b32 registers, but the operand has b64 registers
+#}

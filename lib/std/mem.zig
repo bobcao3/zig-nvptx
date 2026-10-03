@@ -4873,6 +4873,10 @@ pub fn alignForwardLog2(addr: usize, log2_alignment: u8) usize {
 pub fn doNotOptimizeAway(val: anytype) void {
     if (@inComptime()) return;
 
+    // ptxas reads an asm template as plain PTX, so an empty template keeps nothing, and PTX has
+    // no floating-point exception flags for the callers in std.math and compiler_rt to raise
+    if (builtin.target.cpu.arch.isNvptx()) return;
+
     if (builtin.zig_backend == .stage2_c and builtin.abi == .msvc) {
         _ = @atomicRmw(*const anyopaque, @as(*volatile *const anyopaque, &struct {
             var escape: *const anyopaque = undefined;

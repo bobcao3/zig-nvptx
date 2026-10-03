@@ -1,0 +1,15 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_60 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry(out: *u32) callconv(.kernel) void {
+    _ = @atomicRmw(u32, out, .Add, 1, .monotonic);
+}
+#}
+#update
+#check errors {
+tmp.zig:1:8: error: atomic operations need sm_70 or later
+#}

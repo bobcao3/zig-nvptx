@@ -1,0 +1,51 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-emit-bin -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+comptime {
+    if (@sizeOf(*addrspace(.shared) u8) != 4) @compileError("pointer size");
+    if (@alignOf(*addrspace(.shared) u8) != 4) @compileError("pointer alignment");
+    if (@bitSizeOf(*addrspace(.local) u8) != 32) @compileError("pointer bit size");
+    if (@sizeOf(?*addrspace(.shared) u8) != 4) @compileError("optional pointer size");
+    if (@sizeOf([]addrspace(.shared) u8) != 16) @compileError("slice size");
+    if (@sizeOf(*addrspace(.global) u8) != 8) @compileError("global pointer size");
+    const S = extern struct { pointer: *addrspace(.shared) u8, count: u32 };
+    if (@sizeOf(S) != 8) @compileError("extern struct size");
+}
+
+comptime {
+    const null_pointer: ?*addrspace(.shared) u8 = null;
+    if (@intFromPtr(null_pointer) != 0xffff_ffff) @compileError("null address");
+    const zero: ?*addrspace(.shared) u8 = @ptrFromInt(0);
+    if (zero == null) @compileError("address 0 is null");
+    const all_ones: ?*addrspace(.shared) u8 = @ptrFromInt(0xffff_ffff);
+    if (all_ones != null) @compileError("all-ones address is not null");
+}
+
+export fn nullAddress() void {
+    _ = @as(*addrspace(.shared) u8, @ptrFromInt(0xffff_ffff));
+}
+
+export fn wideAddress() void {
+    _ = @as(*addrspace(.shared) u8, @ptrFromInt(0x1_0000_0000));
+}
+#}
+#update
+#check errors {
+tmp.zig:22:49: error: pointer type '*addrspace(.shared) u8' does not allow the null address 0xffffffff
+tmp.zig:26:49: error: pointer type '*addrspace(.shared) u8' cannot hold address 0x100000000
+#}
+
+#zig build-obj {
+--name tmp
+-target amdgcn-amdhsa -fllvm -fno-emit-bin -fno-incremental
+-Mroot=tmp.zig
+#}
+#update
+#check errors {
+tmp.zig:22:49: error: pointer type '*addrspace(.shared) u8' does not allow the null address 0xffffffff
+tmp.zig:26:49: error: pointer type '*addrspace(.shared) u8' cannot hold address 0x100000000
+#}

@@ -7,6 +7,7 @@ test "thread local variable" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const S = struct {
         threadlocal var t: i32 = 1234;
@@ -20,6 +21,7 @@ test "pointer to thread local array" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const s = "Hello world";
     @memcpy(buffer[0..s.len], s);
@@ -33,6 +35,7 @@ test "reference a global threadlocal variable" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     try nrfx_uart_rx(&g_uart0);
 }

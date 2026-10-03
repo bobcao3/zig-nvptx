@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+fn kernel() callconv(.kernel) void {}
+comptime {
+    @export(&kernel, .{ .name = "first" });
+    @export(&kernel, .{ .name = "second" });
+}
+#}
+#update
+#check errors {
+tmp.zig:4:5: error: PTX cannot export a kernel under a second name
+tmp.zig:3:5: note: first exported here
+#}

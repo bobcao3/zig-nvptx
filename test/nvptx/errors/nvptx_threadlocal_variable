@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+threadlocal var count: u32 = 0;
+export fn k(out: *addrspace(.global) u32) callconv(.kernel) void {
+    count += 1;
+    out.* = count;
+}
+#}
+#update
+#check errors {
+tmp.zig:1:13: error: threadlocal variables are not supported
+error: cannot lower a global variable to PTX
+#}

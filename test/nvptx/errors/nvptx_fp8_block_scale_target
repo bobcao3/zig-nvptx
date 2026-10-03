@@ -1,0 +1,21 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_121 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn multiply(out: *@Vector(4, f32)) callconv(.kernel) void {
+    out.* = nv.mmaSyncBlockScale(.{
+        .shape = .m16n8k32,
+        .element = .e4m3,
+        .accumulator = .f32,
+    }, .{}, @as(@Vector(4, u32), @splat(0)), @as(@Vector(2, u32), @splat(0)), @as(@Vector(4, f32), @splat(0)), 0, 0);
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: mma.sync.aligned.kind::mxf8f6f4.block_scale needs PTX 8.8 and sm_120a, sm_120f, sm_121a or sm_121f; the target is sm_121 with PTX 8.8
+#}

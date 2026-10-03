@@ -958,7 +958,11 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
             if (int_type.bits == 0) return .@"1";
             return .fromByteUnits(std.zig.target.intAlignment(target, int_type.bits));
         },
-        .ptr_type, .anyframe_type => ptrAbiAlignment(target),
+        .ptr_type => |ptr_type| switch (ptr_type.flags.size) {
+            .slice => ptrAbiAlignment(target),
+            .one, .many, .c => addressSpacePtrAbiAlignment(target, ptr_type.flags.address_space),
+        },
+        .anyframe_type => ptrAbiAlignment(target),
         .array_type => |array_type| Type.fromInterned(array_type.child).abiAlignment(zcu),
         .vector_type => |vector_type| {
             if (vector_type.len == 0) return .@"1";
@@ -1140,7 +1144,7 @@ pub fn abiSize(ty: Type, zcu: *const Zcu) u64 {
         .int_type => |int_type| std.zig.target.intByteSize(target, int_type.bits),
         .ptr_type => |ptr_type| switch (ptr_type.flags.size) {
             .slice => ptrAbiSize(target) * 2,
-            .one, .many, .c => ptrAbiSize(target),
+            .one, .many, .c => addressSpacePtrAbiSize(target, ptr_type.flags.address_space),
         },
         .anyframe_type => ptrAbiSize(target),
         .array_type => |arr| arr.lenIncludingSentinel() * Type.fromInterned(arr.child).abiSize(zcu),
@@ -1307,6 +1311,17 @@ pub fn ptrAbiAlignment(target: *const Target) Alignment {
 pub fn ptrAbiSize(target: *const Target) u64 {
     return @divExact(target.ptrBitWidth(), 8);
 }
+pub fn addressSpacePtrAbiAlignment(
+    target: *const Target,
+    address_space: std.lang.AddressSpace,
+) Alignment {
+    const bits = target.addressSpacePtrBitWidth(address_space);
+    if (bits == target.ptrBitWidth()) return ptrAbiAlignment(target);
+    return .fromNonzeroByteUnits(@divExact(bits, 8));
+}
+pub fn addressSpacePtrAbiSize(target: *const Target, address_space: std.lang.AddressSpace) u64 {
+    return @divExact(target.addressSpacePtrBitWidth(address_space), 8);
+}
 pub fn errorAbiAlignment(zcu: *const Zcu) Alignment {
     return .fromNonzeroByteUnits(std.zig.target.intAlignment(zcu.getTarget(), zcu.errorSetBits()));
 }
@@ -1322,7 +1337,7 @@ pub fn bitSize(ty: Type, zcu: *const Zcu) u64 {
         .float => ty.floatBits(zcu.getTarget()),
         .pointer, .optional => {
             assert(ty.isPtrAtRuntime(zcu));
-            return zcu.getTarget().ptrBitWidth();
+            return zcu.getTarget().addressSpacePtrBitWidth(ty.ptrAddressSpace(zcu));
         },
         .array, .vector => ty.arrayLenIncludingSentinel(zcu) * ty.childType(zcu).bitSize(zcu),
         else => ty.intInfo(zcu).bits,
@@ -1427,6 +1442,12 @@ pub fn ptrAllowsZero(ty: Type, zcu: *const Zcu) bool {
     return ty.isPtrLikeOptional(zcu) or ty.ptrInfo(zcu).flags.is_allowzero;
 }
 
+/// Returns the address of a null pointer in the address space of the pointer, slice or optional
+/// pointer type `ty`. Only allowzero pointers and optionals can hold this address.
+pub fn nullPtrAddress(ty: Type, zcu: *const Zcu) u64 {
+    return zcu.getTarget().nullPtrAddress(ty.ptrAddressSpace(zcu));
+}
+
 /// See also `isPtrLikeOptional`.
 pub fn optionalReprIsPayload(ty: Type, zcu: *const Zcu) bool {
     return switch (zcu.intern_pool.indexToKey(ty.toIntern())) {
@@ -1441,7 +1462,7 @@ pub fn optionalReprIsPayload(ty: Type, zcu: *const Zcu) bool {
 }
 
 /// Returns true if the type is optional and would be lowered to a single pointer
-/// address value, using 0 for null. Note that this returns true for C pointers.
+/// address value, using `nullPtrAddress` for null. Note that this returns true for C pointers.
 pub fn isPtrLikeOptional(ty: Type, zcu: *const Zcu) bool {
     return switch (zcu.intern_pool.indexToKey(ty.toIntern())) {
         .ptr_type => |ptr_type| ptr_type.flags.size == .c,

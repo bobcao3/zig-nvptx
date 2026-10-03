@@ -132,6 +132,7 @@ test "@intFromFloat > 128 bits" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     try testIntFromFloat(f16, 1024, u140, 1024);
     try testIntFromFloat(f16, -1024, i140, -1024);
@@ -157,6 +158,7 @@ test "@floatFromInt > 128 bits" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     try testFloatFromInt(u140, 1024, f16, 1024);
     try testFloatFromInt(i140, -1024, f16, -1024);

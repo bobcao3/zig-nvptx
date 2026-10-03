@@ -211,7 +211,10 @@ pub fn getUnsignedInt(val: Value, zcu: *const Zcu) ?u64 {
                 else => null,
             },
             .opt => |opt| switch (opt.val) {
-                .none => 0,
+                .none => if (Type.fromInterned(opt.ty).isPtrLikeOptional(zcu))
+                    Type.fromInterned(opt.ty).nullPtrAddress(zcu)
+                else
+                    0,
                 else => |payload| Value.fromInterned(payload).getUnsignedInt(zcu),
             },
             .enum_tag => |enum_tag| Value.fromInterned(enum_tag.int).getUnsignedInt(zcu),
@@ -979,7 +982,7 @@ pub fn isNull(val: Value, zcu: *Zcu) bool {
         else => return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
             .undef => unreachable,
             .ptr => |ptr| switch (ptr.base_addr) {
-                .int => ptr.byte_offset == 0,
+                .int => ptr.byte_offset == Type.fromInterned(ptr.ty).nullPtrAddress(zcu),
                 else => false,
             },
             .opt => |opt| opt.val == .none,

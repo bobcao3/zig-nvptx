@@ -35,7 +35,9 @@ const Module = @import("Module.zig");
 
 test {
     _ = @import("codegen.zig");
+    _ = @import("InternPool.zig");
     _ = link.MappedFile;
+    _ = @import("link/Nvptx/Object.zig");
 }
 
 const thread_stack_size = 60 << 20;

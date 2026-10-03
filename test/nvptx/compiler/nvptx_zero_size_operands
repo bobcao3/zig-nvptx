@@ -1,0 +1,143 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const U1 = union(enum) { a: void };
+const U2 = union { a: void, b: u0 };
+const U3 = union(enum) { a: void, b: u32 };
+const E0 = error{};
+const O1 = ?noreturn;
+const O2 = ?E0;
+const S0 = struct {};
+noinline fn optNoreturn(x: O1) u32 {
+    return if (x == null) 1 else 2;
+}
+noinline fn optNoreturn2(x: O1) u32 {
+    if (x) |_| return 2;
+    return 1;
+}
+noinline fn optErr(x: O2) u32 {
+    return if (x != null) 2 else 1;
+}
+noinline fn optErrPtr(x: *const O2) u32 {
+    return if (x.* != null) 2 else 1;
+}
+noinline fn eu(x: E0!u32) u32 {
+    return x catch |e| switch (e) {};
+}
+noinline fn eu2(x: E0!void) u32 {
+    x catch |e| switch (e) {};
+    return 1;
+}
+noinline fn eup(x: *const E0!u32) u32 {
+    return x.* catch 0;
+}
+noinline fn uni1(x: U1) u32 {
+    return switch (x) {
+        .a => 1,
+    };
+}
+noinline fn uni2(x: U2) u32 {
+    _ = x.a;
+    return 1;
+}
+noinline fn uni3(x: U3) u32 {
+    return switch (x) {
+        .a => 1,
+        .b => |v| v,
+    };
+}
+noinline fn uni3b(x: U3) void {
+    _ = x.a;
+}
+noinline fn retU1() U1 {
+    return .{ .a = {} };
+}
+noinline fn retU2() U2 {
+    return .{ .a = {} };
+}
+noinline fn retO(x: u32) O2 {
+    _ = x;
+    return null;
+}
+noinline fn retS(x: u32) S0 {
+    _ = x;
+    return .{};
+}
+noinline fn zeroLen(x: [0]u32, y: S0, z: void, w: u0) u32 {
+    _ = .{ x, y, z, w };
+    return 1;
+}
+noinline fn wideDest(x: u128) u0 {
+    return @intCast(x & 0);
+}
+noinline fn wideSrc(x: u0) u128 {
+    return x;
+}
+noinline fn wideSrc2(x: u0) u200 {
+    return @as(u200, x) + 1;
+}
+export fn k(out: *addrspace(.global) u32, n: u32, a: u128) callconv(.kernel) void {
+    var o: O1 = null;
+    _ = &o;
+    var o2: O2 = null;
+    _ = &o2;
+    var e1: E0!u32 = n;
+    _ = &e1;
+    var e2: E0!void = {};
+    _ = &e2;
+    var x1: U1 = .{ .a = {} };
+    var x2: U2 = .{ .a = {} };
+    var x3: U3 = if (n == 0) .{ .a = {} } else .{ .b = n };
+    _ = .{ &x1, &x2, &x3 };
+    var r: u32 = 0;
+    r +%= optNoreturn(o) +% optNoreturn2(o) +% optErr(o2) +% optErrPtr(&o2);
+    r +%= eu(e1) +% eu2(e2) +% eup(&e1);
+    r +%= uni1(x1) +% uni2(x2) +% uni3(x3);
+    uni3b(x3);
+    x1 = retU1();
+    x2 = retU2();
+    o2 = retO(n);
+    const s = retS(n);
+    r +%= zeroLen(.{}, s, {}, 0);
+    r +%= @intCast(wideSrc(wideDest(a)) +% wideSrc2(0));
+    out.* = r;
+}
+
+const Enum0 = enum(u0) { a };
+const Packed0 = packed struct(u0) {};
+export fn atomics(p: *addrspace(.global) u0, q: *addrspace(.global) u32, e: *addrspace(.global) Enum0, b: *addrspace(.global) Packed0) callconv(.kernel) void {
+    @atomicStore(u0, p, p.*, .seq_cst);
+    @atomicStore(Enum0, e, e.*, .monotonic);
+    @atomicStore(Packed0, b, .{}, .seq_cst);
+    q.* = @atomicLoad(u0, p, .acquire) + @backingInt(@atomicLoad(Enum0, e, .seq_cst));
+    _ = @atomicRmw(u0, p, .Xchg, p.*, .seq_cst);
+    _ = @cmpxchgWeak(u0, p, p.*, p.*, .seq_cst, .monotonic);
+    _ = @cmpxchgStrong(Packed0, b, b.*, b.*, .seq_cst, .monotonic);
+}
+
+noinline fn voidResult() void {}
+noinline fn emptyResult(x: u32) S0 {
+    _ = x;
+    return .{};
+}
+export fn copies(out: *addrspace(.global) u32, a: []u0, b: []void, n: usize) callconv(.kernel) void {
+    @memset(a, 0);
+    @memset(b, {});
+    @memcpy(a, a);
+    var empty: [3]S0 = undefined;
+    var other: [3]S0 = undefined;
+    @memset(&empty, .{});
+    @memcpy(&other, &empty);
+    @memmove(&other, &empty);
+    const x1: U1 = .{ .a = voidResult() };
+    const x2: U2 = .{ .b = 0 };
+    _ = .{ x1, x2, emptyResult(@intCast(n)) };
+    out.* = @intCast(a.len + b.len);
+}
+#}
+#update
+#check errors

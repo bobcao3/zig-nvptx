@@ -86,6 +86,7 @@ test "global const can be self-referential" {
 
 test "global var can be self-referential" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest; // ptxas rejects an initial value that names the variable itself
 
     const S = struct {
         self: *@This(),
@@ -141,6 +142,7 @@ test "global const can be indirectly self-referential" {
 
 test "global var can be indirectly self-referential" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest; // ptxas rejects an initial value that names a variable defined later
 
     const S = struct {
         other: *@This(),

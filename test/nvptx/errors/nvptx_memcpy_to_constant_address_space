@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const table: [16]f32 addrspace(.constant) = @splat(1.5);
+
+export fn entry(in: *addrspace(.global) [16]f32, out: *addrspace(.global) f32) callconv(.kernel) void {
+    @memcpy(@constCast(&table), in);
+    out.* = table[0];
+}
+#}
+#update
+#check errors {
+tmp.zig:3:8: error: store to address space 'constant'
+#}

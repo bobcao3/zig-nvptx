@@ -77,6 +77,7 @@ comptime {
                     @export(&wasm_freestanding_start, .{ .name = start_sym_name });
             },
             .other,
+            .cuda,
             .vulkan,
             .opengl,
             .opencl,

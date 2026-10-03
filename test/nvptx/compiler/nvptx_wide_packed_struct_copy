@@ -1,0 +1,20 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const Wide = packed struct {
+    a: u24,
+    b: u24,
+    c: u24,
+    d: u24,
+};
+
+export fn kernel(dest: *Wide, src: *const Wide) callconv(.kernel) void {
+    dest.* = src.*;
+}
+#}
+#update
+#check errors

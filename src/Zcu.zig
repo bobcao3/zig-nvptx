@@ -4922,6 +4922,13 @@ pub fn callconvSupported(zcu: *Zcu, cc: std.lang.CallingConvention) union(enum) 
                 else => false,
             };
         },
+        .stage2_nvptx => {
+            dev.check(.nvptx_backend);
+            break :ok switch (cc) {
+                .nvptx_device, .nvptx_kernel => true,
+                else => false,
+            };
+        },
         .zsf_spork8 => {
             dev.check(.spork8_backend);
             break :ok switch (cc) {

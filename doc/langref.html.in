@@ -2210,6 +2210,16 @@ and or{#endsyntax#}</pre>
       {#link|Pointer Cast Invalid Null#} panic:
       </p>
       {#code|test_allowzero.zig#}
+      <p>
+      In some GPU address spaces, 0 is a valid address, so a null pointer holds the all-ones address
+      of the pointer width instead. These are the {#syntax#}.shared{#endsyntax#},
+      {#syntax#}.local{#endsyntax#} and {#syntax#}.constant{#endsyntax#} address spaces of the nvptx
+      architectures and the {#syntax#}.shared{#endsyntax#} and {#syntax#}.local{#endsyntax#}
+      address spaces of amdgcn. In these address spaces, {#syntax#}allowzero{#endsyntax#} allows
+      the null address, and the rules for the address zero in this document apply to the null
+      address. On nvptx64 and amdgcn, the pointers into these address spaces have 32 bits, and a
+      slice still has the size and alignment of two {#syntax#}usize{#endsyntax#} values.
+      </p>
 
       {#header_close#}
 
@@ -4447,7 +4457,8 @@ pub fn print(self: *Writer, arg0: []const u8, arg1: i32) !void {
 			based on the result type. Depending on the current target and address spaces, this cast
 			may be a no-op, a complex operation, or illegal. If the cast is legal, then the resulting
 			pointer points to the same memory location as the pointer operand. It is always valid to
-			cast a pointer between the same address spaces.
+			cast a pointer between the same address spaces. If the operand is an optional pointer, a null
+			operand gives a null result.
       </p>
       {#header_close#}
       {#header_open|@addWithOverflow#}
@@ -5434,7 +5445,10 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       </p>
       <p>
       If the destination pointer type does not allow address zero and {#syntax#}address{#endsyntax#}
-      is zero, this invokes safety-checked {#link|Illegal Behavior#}.
+      is zero, this invokes safety-checked {#link|Illegal Behavior#}. If the destination pointer
+      is narrower than {#syntax#}usize{#endsyntax#} (see {#link|allowzero#}) and
+      {#syntax#}address{#endsyntax#} does not fit in it, this also invokes safety-checked
+      {#link|Illegal Behavior#}.
       </p>
       {#see_also|@intFromPtr#}
       {#header_close#}

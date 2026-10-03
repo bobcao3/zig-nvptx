@@ -1,0 +1,19 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn a() callconv(.{ .nvptx_kernel = .{ .max_work_group_size = .{ .x = 0 } } }) void {}
+export fn b() callconv(.{ .nvptx_kernel = .{
+    .required_work_group_size = .{ .x = 32, .y = 0 },
+} }) void {}
+export fn c() callconv(.{ .nvptx_kernel = .{ .cluster_size = .{ .x = 2, .z = 0 } } }) void {}
+#}
+#update
+#check errors {
+tmp.zig:1:25: error: kernel work group and cluster sizes must be at least 1
+tmp.zig:2:25: error: kernel work group and cluster sizes must be at least 1
+tmp.zig:5:25: error: kernel work group and cluster sizes must be at least 1
+#}

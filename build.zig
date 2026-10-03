@@ -121,6 +121,8 @@ pub fn build(b: *std.Build) !void {
     const skip_libc = b.option(bool, "skip-libc", "Main test suite skips tests that link libc") orelse false;
     const skip_single_threaded = b.option(bool, "skip-single-threaded", "Main test suite skips tests that are single-threaded") orelse false;
     const skip_spirv = b.option(bool, "skip-spirv", "Main test suite skips targets with spirv32/spirv64 architecture") orelse false;
+    const skip_nvptx = b.option(bool, "skip-nvptx", "Main test suite skips targets with nvptx64 architecture") orelse false;
+    const ptxas = b.option([]const u8, "ptxas", "Path of the ptxas that checks every PTX module of the nvptx64 tests");
     const skip_wasm = b.option(bool, "skip-wasm", "Main test suite skips targets with wasm32/wasm64 architecture") orelse false;
     const skip_freebsd = b.option(bool, "skip-freebsd", "Main test suite skips targets with freebsd OS") orelse false;
     const skip_netbsd = b.option(bool, "skip-netbsd", "Main test suite skips targets with netbsd OS") orelse false;
@@ -260,6 +262,9 @@ pub fn build(b: *std.Build) !void {
         exe.root_module.link_libc = true;
     }
 
+    const coverage = b.option(bool, "coverage", "Instrument the compiler with coverage points and add the coverage step (requires -Duse-llvm)") orelse false;
+    if (coverage and use_llvm != true) std.process.fatal("-Dcoverage requires -Duse-llvm", .{});
+
     const enable_debug_extensions = b.option(bool, "debug-extensions", "Enable commands and options useful for debugging the compiler") orelse is_debug;
     const log_level: std.log.Level = b.option(std.log.Level, "log", "Enable logs of the given or higher severity. Passing 'debug' still requires passing '--debug-log' to actually see any debug logs.") orelse switch (enable_debug_extensions) {
         true => .debug,
@@ -393,6 +398,7 @@ pub fn build(b: *std.Build) !void {
                 .llvm_has_csky = llvm_has_csky,
                 .llvm_has_arc = llvm_has_arc,
                 .llvm_has_xtensa = llvm_has_xtensa,
+                .coverage = coverage,
             });
         }
         if (target.result.os.tag == .windows) {
@@ -508,6 +514,8 @@ pub fn build(b: *std.Build) !void {
         .skip_non_native = skip_non_native,
         .test_only = test_only,
         .skip_spirv = skip_spirv,
+        .skip_nvptx = skip_nvptx,
+        .ptxas = ptxas,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -535,6 +543,8 @@ pub fn build(b: *std.Build) !void {
         .skip_non_native = skip_non_native,
         .test_only = test_only,
         .skip_spirv = skip_spirv,
+        .skip_nvptx = skip_nvptx,
+        .ptxas = ptxas,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -563,6 +573,7 @@ pub fn build(b: *std.Build) !void {
         .skip_non_native = skip_non_native,
         .test_only = test_only,
         .skip_spirv = true,
+        .skip_nvptx = true,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -590,6 +601,7 @@ pub fn build(b: *std.Build) !void {
         .skip_non_native = skip_non_native,
         .test_only = test_only,
         .skip_spirv = true,
+        .skip_nvptx = true,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -624,7 +636,65 @@ pub fn build(b: *std.Build) !void {
         unit_tests.root_module.link_libc = true;
     }
     unit_tests.root_module.addOptions("build_options", exe_options);
+    const nvptx_fuzz_options = b.addOptions();
+    nvptx_fuzz_options.addOptionPathUntracked("zig_lib_dir", b.path("lib"));
+    if (b.option([]const u8, "test-nvptx-fuzz-dir", "Directory for the programs and findings of the PTX backend fuzz test")) |dir| {
+        nvptx_fuzz_options.addOption([]const u8, "work_dir", dir);
+    } else {
+        nvptx_fuzz_options.addOptionPathUntracked("work_dir", std.Build.LazyPath.cache_root.path(b, "nvptx-fuzz"));
+    }
+    nvptx_fuzz_options.addOption(u32, "random_programs", b.option(
+        u32,
+        "test-nvptx-fuzz-programs",
+        "Number of random programs that the PTX backend fuzz test checks without --fuzz",
+    ) orelse 0);
+    nvptx_fuzz_options.addOption([]const []const u8, "check_cmd", b.option(
+        []const []const u8,
+        "test-nvptx-fuzz-cmd",
+        "Command and arguments that check the PTX of the PTX backend fuzz test on a GPU",
+    ) orelse &.{});
+    unit_tests.root_module.addOptions("nvptx_fuzz_options", nvptx_fuzz_options);
     unit_tests_step.dependOn(&b.addRunArtifact(unit_tests).step);
+
+    // The fuzz test compiles programs in process, which makes every backend that the compiler
+    // contains reachable from the test. A compiler with only the PTX backend keeps the tests of
+    // the other backends out of this build.
+    const nvptx_fuzz_tests = b.addTest(.{
+        .name = "nvptx-fuzz",
+        .root_module = addCompilerMod(b, .{
+            .optimize = optimize,
+            .target = target,
+            .sanitize_thread = sanitize_thread,
+            .single_threaded = single_threaded,
+        }),
+        .filters = test_filters,
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+        .zig_lib_dir = b.path("lib"),
+        .max_rss = 7_000_000_000,
+    });
+    const nvptx_fuzz_build_options = b.addOptions();
+    nvptx_fuzz_build_options.addOption(u32, "mem_leak_frames", 0);
+    nvptx_fuzz_build_options.addOption(bool, "have_llvm", false);
+    nvptx_fuzz_build_options.addOption(bool, "debug_gpa", false);
+    nvptx_fuzz_build_options.addOption([:0]const u8, "version", version);
+    nvptx_fuzz_build_options.addOption(std.SemanticVersion, "semver", semver);
+    nvptx_fuzz_build_options.addOption(bool, "enable_debug_extensions", false);
+    nvptx_fuzz_build_options.addOption(std.log.Level, "log_level", .debug);
+    nvptx_fuzz_build_options.addOption(bool, "enable_tracy", false);
+    nvptx_fuzz_build_options.addOption(bool, "enable_tracy_callstack", false);
+    nvptx_fuzz_build_options.addOption(bool, "enable_tracy_allocation", false);
+    nvptx_fuzz_build_options.addOption(u32, "tracy_callstack_depth", 0);
+    nvptx_fuzz_build_options.addOption(bool, "value_tracing", false);
+    nvptx_fuzz_build_options.addOption(DevEnv, "dev", .nvptx);
+    nvptx_fuzz_build_options.addOption(IoMode, "io_mode", io_mode);
+    nvptx_fuzz_build_options.addOption(ValueInterpretMode, "value_interpret_mode", value_interpret_mode);
+    nvptx_fuzz_tests.root_module.addOptions("build_options", nvptx_fuzz_build_options);
+    nvptx_fuzz_tests.root_module.addOptions("nvptx_fuzz_options", nvptx_fuzz_options);
+    const nvptx_fuzz_step = b.step("test-nvptx-fuzz", "Run the PTX backend fuzz test");
+    nvptx_fuzz_step.dependOn(&b.addRunArtifact(nvptx_fuzz_tests).step);
+    if (!skip_nvptx) test_step.dependOn(nvptx_fuzz_step);
+    if (coverage) addCoverageStep(b, exe, nvptx_fuzz_tests, target, optimize, ptxas);
 
     test_step.dependOn(tests.addStandaloneTests(
         b,
@@ -665,6 +735,12 @@ pub fn build(b: *std.Build) !void {
         .max_rss = 100_000_000,
     }));
     test_step.dependOn(tests.addCliTests(b));
+    const test_nvptx_step = tests.addNvptxTests(b, .{
+        .test_filters = test_filters,
+        .test_target_filters = test_target_filters,
+        .ptxas = ptxas,
+    });
+    if (!skip_nvptx) test_step.dependOn(test_nvptx_step);
 
     try addWasiUpdateStep(b, version);
 
@@ -770,6 +846,7 @@ pub fn build(b: *std.Build) !void {
 
     const test_compiler_step = b.step("test-compiler", "Run the compiler tests");
     try tests.addRunnerTests(b, runner, test_compiler_step, "test/compiler", @import("test/compiler/matrix.zon"), runner_opts);
+    if (!skip_nvptx) try tests.addRunnerTests(b, runner, test_compiler_step, "test/nvptx/compiler", @import("test/nvptx/matrix.zon"), runner_opts);
     test_step.dependOn(test_compiler_step);
 
     const test_debugger_step = b.step("test-debugger", "Run the debugger tests");
@@ -780,6 +857,7 @@ pub fn build(b: *std.Build) !void {
 
     const test_errors_step = b.step("test-errors", "Run the compile error tests");
     try tests.addRunnerTests(b, runner, test_errors_step, "test/errors", @import("test/errors/matrix.zon"), runner_opts);
+    if (!skip_nvptx) try tests.addRunnerTests(b, runner, test_errors_step, "test/nvptx/errors", @import("test/nvptx/matrix.zon"), runner_opts);
     test_step.dependOn(test_errors_step);
 
     const test_error_traces_step = b.step("test-error-traces", "Run the error trace tests");
@@ -923,10 +1001,10 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
 fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Step.Compile {
     const exe = b.addExecutable(.{
         .name = "zig",
-        // This number should never be raised. If the value is exceeded, then
-        // it is considered a bug in the Zig project that building the
-        // compiler takes more than 8G of memory.
-        .max_rss = 8_000_000_000,
+        // A release build of the compiler with static LLVM and debug
+        // information peaks at about 14G of memory on aarch64-linux. This
+        // limit leaves room above that peak.
+        .max_rss = 24_000_000_000,
         .root_module = addCompilerMod(b, options),
     });
     exe.stack_size = stack_size;
@@ -1045,6 +1123,7 @@ fn addStaticLlvmOptionsToModule(mod: *std.Build.Module, options: struct {
     llvm_has_csky: bool,
     llvm_has_arc: bool,
     llvm_has_xtensa: bool,
+    coverage: bool = false,
 }) !void {
     // Adds the Zig C++ sources which both stage1 and stage2 need.
     //
@@ -1052,9 +1131,12 @@ fn addStaticLlvmOptionsToModule(mod: *std.Build.Module, options: struct {
     // in a dependency on llvm::cfg::Update<llvm::BasicBlock*>::dump() which is
     // unavailable when LLVM is compiled in Release mode.
     const zig_cpp_cflags = exe_cflags ++ [_][]const u8{"-DNDEBUG=1"};
+    // Clang instruments the C++ sources of a module that has `fuzz` set with calls to comparison
+    // hooks that the fuzzer library of Zig does not define.
+    const no_fuzz_cflags = zig_cpp_cflags ++ [_][]const u8{"-fno-sanitize=fuzzer-no-link"};
     mod.addCSourceFiles(.{
         .files = &zig_cpp_sources,
-        .flags = &zig_cpp_cflags,
+        .flags = if (options.coverage) &no_fuzz_cflags else &zig_cpp_cflags,
     });
 
     const lsl_options: std.Build.Module.LinkSystemLibraryOptions = .{ .use_pkg_config = .no };
@@ -1705,4 +1787,87 @@ fn superHtmlCheck(b: *std.Build, html_file: std.Build.LazyPath) *std.Build.Step 
     run_superhtml.addFileArg(html_file);
     run_superhtml.expectExitCode(0);
     return &run_superhtml.step;
+}
+
+fn addCoverageStep(
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
+    unit_tests: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    ptxas: ?[]const u8,
+) void {
+    const steps = b.option([]const []const u8, "coverage-step", "Test steps that the coverage step runs with the instrumented compiler for the nvptx64 targets") orelse &[_][]const u8{ "test-nvptx", "test-compiler", "test-errors", "test-modules" };
+    const counters = b.option([]const []const u8, "coverage-counters", "Counter files that `coverage run` wrote outside this build and the report includes") orelse &.{};
+    const sources = b.option([]const []const u8, "coverage-source", "Source paths that the coverage report covers") orelse &[_][]const u8{ "src/codegen/nvptx/", "src/link/Nvptx.zig", "src/link/Nvptx/", "!src/codegen/nvptx/verify.zig" };
+
+    for ([_]*std.Build.Step.Compile{ exe, unit_tests }) |program| {
+        program.root_module.fuzz = true;
+        program.root_module.addObject(b.addObject(.{
+            .name = "fuzz_runner_stubs",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tools/fuzz_runner_stubs.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = program.root_module.link_libc,
+            }),
+        }));
+    }
+    // The default test runner needs the build server in a `-ffuzz` build.
+    unit_tests.test_runner = .{ .path = b.path("tools/coverage_test_runner.zig"), .mode = .simple };
+
+    const coverage_exe = b.addExecutable(.{
+        .name = "coverage",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/coverage.zig"),
+            .target = b.graph.host,
+            .optimize = .safe,
+        }),
+    });
+    b.installArtifact(coverage_exe);
+
+    const report = b.addRunArtifact(coverage_exe);
+    report.addArg("report");
+    report.addDirectoryArg(b.path("."));
+    const report_file = report.addOutputFileArg("coverage.md");
+    report.addArgs(sources);
+    report.addArg("--");
+    report.addArtifactArg(exe);
+    // The output directory of a run step with side effects follows the hash of its arguments, and
+    // a directory argument enters as its path. The local cache of a nested build lies next to the
+    // compiler, so a rebuilt compiler gets run directories, counters and caches of its own.
+    for (steps) |step_name| {
+        const run = b.addRunArtifact(coverage_exe);
+        run.setName(b.fmt("coverage of {s}", .{step_name}));
+        run.has_side_effects = true;
+        run.addArg("run");
+        report.addFileArg(run.addOutputFileArg("counters"));
+        // The nested build uses caches of its own, so that it compiles everything with the
+        // instrumented compiler. `zig build` takes the global cache from the environment only.
+        run.addArgs(&.{ "--", "env" });
+        _ = run.addPrefixedOutputDirectoryArg("ZIG_GLOBAL_CACHE_DIR=", "global-cache");
+        run.addArtifactArg(exe);
+        run.addArg("build");
+        run.addPrefixedDirectoryArg("--zig-lib=", b.path("lib"));
+        run.addArgs(&.{ step_name, "-Dtest-target-filter=nvptx64" });
+        if (ptxas) |path| run.addArg(b.fmt("-Dptxas={s}", .{path}));
+        run.addArg("--cache-dir");
+        run.addDirectoryArg(exe.getEmittedBinDirectory().path(b, "cache"));
+    }
+    for (counters) |path| report.addFileArg(.{ .cwd_relative = path });
+
+    const unit_run = b.addRunArtifact(coverage_exe);
+    unit_run.setName("coverage of the unit tests");
+    unit_run.has_side_effects = true;
+    unit_run.addArg("run");
+    const unit_counters = unit_run.addOutputFileArg("counters");
+    unit_run.addArg("--");
+    unit_run.addArtifactArg(unit_tests);
+    unit_run.addPrefixedDirectoryArg("--cache-dir=", unit_tests.getEmittedBinDirectory());
+    report.addArg("--");
+    report.addArtifactArg(unit_tests);
+    report.addFileArg(unit_counters);
+
+    const coverage_step = b.step("coverage", "Write a report of the branches of the compiler that the test steps run for the nvptx64 targets");
+    coverage_step.dependOn(&b.addInstallFile(report_file, "coverage.md").step);
 }

@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+var counter: u32 = 0;
+comptime {
+    @export(&counter, .{ .name = "first" });
+    @export(&counter, .{ .name = "second" });
+}
+#}
+#update
+#check errors {
+tmp.zig:4:5: error: PTX cannot export a variable under a second name
+tmp.zig:3:5: note: first exported here
+#}

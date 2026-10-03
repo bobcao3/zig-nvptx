@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_100a+ptx86 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn convert(out: *u32, x: f32, random_bits: u32) callconv(.kernel) void {
+    out.* = @backingInt(nv.E4m3x4.fromF32Stochastic(x, x, x, x, random_bits));
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: cvt.rs.satfinite.e4m3x4.f32 needs PTX 8.7 and sm_100a; the target is sm_100a with PTX 8.6
+#}

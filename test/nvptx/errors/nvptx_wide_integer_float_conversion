@@ -1,0 +1,15 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn toFloat(out: *f64, value: *const u256) callconv(.kernel) void {
+    out.* = @floatFromInt(value.*);
+}
+#}
+#update
+#check errors {
+tmp.zig:1:8: error: TODO (PTX): conversion between floats and integers wider than 128 bits
+#}

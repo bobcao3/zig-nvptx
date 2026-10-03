@@ -32,6 +32,7 @@ test "import c keywords" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     try std.testing.expect(int == .c_keyword_variable);
     try std.testing.expect(long == .c_keyword_variable);

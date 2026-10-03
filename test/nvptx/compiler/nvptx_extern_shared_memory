@@ -1,0 +1,16 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+extern var dynamic_shared: [0]f32 align(16) addrspace(.shared);
+
+export fn kernel(data: [*]addrspace(.global) f32) callconv(.kernel) void {
+    const shared: [*]addrspace(.shared) f32 = &dynamic_shared;
+    data[0] = shared[@workItemId(0)];
+}
+#}
+#update
+#check errors

@@ -3935,6 +3935,25 @@ pub fn getCoerced(pt: Zcu.PerThread, val: Value, new_ty: Type) Allocator.Error!V
         },
         else => {},
     }
+    // In some address spaces, a null pointer holds an address other than 0.
+    const is_null = switch (val.toIntern()) {
+        .null_value => true,
+        else => switch (ip.indexToKey(val.toIntern())) {
+            .opt => |opt| opt.val == .none,
+            else => false,
+        },
+    };
+    if (is_null and new_ty.zigTypeTag(pt.zcu) == .pointer) {
+        const null_address = new_ty.nullPtrAddress(pt.zcu);
+        if (null_address != 0) return switch (new_ty.ptrSize(pt.zcu)) {
+            .one, .many, .c => pt.ptrIntValue(new_ty, null_address),
+            .slice => .fromInterned(try pt.intern(.{ .slice = .{
+                .ty = new_ty.toIntern(),
+                .ptr = (try pt.ptrIntValue(new_ty.slicePtrFieldType(pt.zcu), null_address)).toIntern(),
+                .len = .undef_usize,
+            } })),
+        };
+    }
     return .fromInterned(try ip.getCoerced(gpa, io, pt.tid, val.toIntern(), new_ty.toIntern()));
 }
 
@@ -4056,7 +4075,7 @@ pub fn errorSetFromUnsortedNames(
 pub fn ptrIntValue(pt: Zcu.PerThread, ty: Type, x: u64) Allocator.Error!Value {
     const zcu = pt.zcu;
     assert(ty.zigTypeTag(zcu) == .pointer and !ty.isSlice(zcu));
-    assert(x != 0 or ty.isAllowzeroPtr(zcu));
+    assert(x != ty.nullPtrAddress(zcu) or ty.isAllowzeroPtr(zcu));
     return .fromInterned(try pt.intern(.{ .ptr = .{
         .ty = ty.toIntern(),
         .base_addr = .int,

@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+var tile: [4]u32 addrspace(.shared) = undefined;
+export fn entry(out: *u32) callconv(.kernel) void {
+    const p: *addrspace(.global) u32 = @addrSpaceCast(&tile[0]);
+    out.* = p.*;
+}
+#}
+#update
+#check errors {
+tmp.zig:3:40: error: invalid address space cast
+tmp.zig:3:55: note: address space 'shared' is not compatible with address space 'global'
+#}

@@ -6,10 +6,12 @@ const OptimizeMode = std.builtin.Optimize;
 const Step = std.Build.Step;
 
 // Cases
+const nvptx = @import("nvptx.zig");
 const libc = @import("libc.zig");
 const link = @import("link.zig");
 
 // Implementations
+pub const PtxContext = @import("src/Ptx.zig");
 pub const LibcContext = @import("src/Libc.zig");
 pub const LinkContext = @import("src/Link.zig");
 
@@ -1597,6 +1599,15 @@ const module_test_targets = blk: {
         //    .use_lld = false,
         //},
 
+        // NVPTX Targets
+
+        .{
+            .target = std.Target.Query.parse(.{
+                .arch_os_abi = "nvptx64-cuda",
+                .cpu_features = "sm_80",
+            }) catch unreachable,
+        },
+
         // WASI Targets
 
         .{
@@ -2547,6 +2558,8 @@ pub const ModuleTestOptions = struct {
     skip_single_threaded: bool,
     skip_non_native: bool,
     skip_spirv: bool,
+    skip_nvptx: bool,
+    ptxas: ?[]const u8 = null,
     skip_wasm: bool,
     skip_freebsd: bool,
     skip_netbsd: bool,
@@ -2618,6 +2631,8 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
         }
 
         if (options.skip_spirv and target.cpu.arch.isSpirv()) continue;
+        if (options.skip_nvptx and target.cpu.arch.isNvptx()) continue;
+        if (target.cpu.arch.isNvptx() and !std.mem.eql(u8, options.name, "behavior")) continue;
         if (options.skip_wasm and target.cpu.arch.isWasm()) continue;
 
         if (options.skip_freebsd and target.os.tag == .freebsd) continue;
@@ -2853,10 +2868,15 @@ fn addOneModuleTest(
         run.setName(b.fmt("run test {s}", .{qualified_name}));
 
         step.dependOn(&run.step);
-    } else if (target.cpu.arch.isSpirV()) {
+    } else if (target.cpu.arch.isSpirv()) {
         // Don't run spirv binaries
         _ = these_tests.getEmittedBin();
         step.dependOn(&these_tests.step);
+    } else if (target.cpu.arch.isNvptx()) {
+        // Don't run nvptx binaries
+        const ptx = these_tests.getEmittedBin();
+        step.dependOn(&these_tests.step);
+        if (options.ptxas) |ptxas| step.dependOn(&PtxContext.addPtxasCheck(b, ptxas, target.*, ptx).step);
     } else if (target.cpu.arch == .x86_64 and target.os.tag.isDarwin()) {
         // https://codeberg.org/ziglang/zig/issues/35267
         _ = these_tests.getEmittedBin();
@@ -2874,6 +2894,7 @@ pub fn wouldUseLlvm(use_llvm: ?bool, query: std.Target.Query, optimize_mode: Opt
     if (comptime builtin.cpu.arch.endian() == .big) return true; // https://github.com/ziglang/zig/issues/25961
     if (use_llvm) |x| return x;
     if (query.ofmt == .c) return false;
+    if (query.cpu_arch == .nvptx64) return false;
     switch (optimize_mode) {
         .debug => {},
         else => return true,
@@ -3236,6 +3257,20 @@ pub fn addRunnerTests(
 fn isEditorFileName(name: []const u8) bool {
     return (std.mem.startsWith(u8, name, "#") and std.mem.endsWith(u8, name, "#")) or
         std.mem.endsWith(u8, name, "~") or std.mem.endsWith(u8, name, ".swp");
+}
+
+pub fn addNvptxTests(b: *std.Build, options: PtxContext.Options) *Step {
+    const step = b.step("test-nvptx", "Run the PTX output tests");
+
+    var context: PtxContext = .{
+        .b = b,
+        .options = options,
+        .root_step = step,
+    };
+
+    nvptx.addCases(&context);
+
+    return step;
 }
 
 const libc_test_nsz_targets: []const std.Target.Query = &.{

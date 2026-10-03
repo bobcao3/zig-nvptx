@@ -69,6 +69,7 @@ export fn an_extern_function() void {}
 
 test "@extern binds to strong @export over weak @export" {
     if (builtin.zig_backend == .stage2_c) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/36986
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const sym_name = "extern_binds_to_strong_export_over_weak_export";
 

@@ -1,0 +1,13 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn kernel(out: *u1024) callconv(.kernel) void {
+    out.* = 1 << 1023;
+}
+#}
+#update
+#check errors

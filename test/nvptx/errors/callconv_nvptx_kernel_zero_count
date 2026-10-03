@@ -1,0 +1,15 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn a() callconv(.{ .nvptx_kernel = .{ .min_work_groups_per_sm = 0 } }) void {}
+export fn b() callconv(.{ .nvptx_kernel = .{ .max_registers_per_work_item = 0 } }) void {}
+#}
+#update
+#check errors {
+tmp.zig:1:25: error: kernel options must be at least 1
+tmp.zig:2:25: error: kernel options must be at least 1
+#}

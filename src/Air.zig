@@ -301,12 +301,14 @@ pub const Inst = struct {
         /// Uses the `ty_op` field.
         ptr_cast,
         /// Cast an integer to a pointer (not a slice). Operand type is always `usize`.
+        /// A pointer narrower than `usize` keeps the low bits of the operand.
         ///
         /// Supports vectors of integers.
         ///
         /// Uses the `ty_op` field.
         ptr_from_int,
         /// Cast a pointer (not a slice) to an integer. Result type is always `usize`.
+        /// A pointer narrower than `usize` is zero-extended.
         ///
         /// Supports vectors of pointers.
         ///
@@ -946,7 +948,9 @@ pub const Inst = struct {
         /// Sets the operand as the current error return trace,
         set_err_return_trace,
 
-        /// Convert the address space of a pointer.
+        /// Convert the address space of a pointer. If the operand is an optional pointer, a null
+        /// operand gives a null result, even when the two address spaces have different null
+        /// addresses.
         /// Uses the `ty_op` field.
         addrspace_cast,
 

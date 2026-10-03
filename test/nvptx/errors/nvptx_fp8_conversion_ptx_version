@@ -1,0 +1,17 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -mcpu sm_89+ptx80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const nv = @import("std").nvptx;
+
+export fn convert(out: *u16, x: f32) callconv(.kernel) void {
+    out.* = @backingInt(nv.E4m3x2.fromF32(x, x));
+}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: cvt.rn.satfinite.e4m3x2.f32 needs PTX 8.1 and sm_89 or later; the target is sm_89 with PTX 8.0
+#}

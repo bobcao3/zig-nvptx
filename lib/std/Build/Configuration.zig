@@ -2525,6 +2525,7 @@ pub const TargetQuery = struct {
         llvmir,
         macho,
         plan9,
+        ptx,
         raw,
         spirv,
         wasm,

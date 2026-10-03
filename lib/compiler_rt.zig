@@ -113,6 +113,7 @@ comptime {
     _ = @import("compiler_rt/cos.zig");
     _ = @import("compiler_rt/exp.zig");
     _ = @import("compiler_rt/exp2.zig");
+    if (builtin.cpu.arch == .nvptx64) _ = @import("compiler_rt/nvptx.zig");
     _ = @import("compiler_rt/fabs.zig");
     _ = @import("compiler_rt/floor_ceil.zig");
     _ = @import("compiler_rt/fma.zig");

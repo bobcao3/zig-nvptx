@@ -176,10 +176,15 @@ pub const CallingConvention = union(enum(u8)) {
 
     pub const kernel: CallingConvention = switch (builtin.target.cpu.arch) {
         .amdgcn => .amdgcn_kernel,
-        .nvptx, .nvptx64 => .nvptx_kernel,
+        .nvptx, .nvptx64 => .{ .nvptx_kernel = .{} },
         .spirv32, .spirv64 => .{ .spirv_kernel = .{ .x = 1, .y = 1, .z = 1 } },
         else => unreachable,
     };
+
+    test kernel {
+        if (!builtin.cpu.arch.isNvptx()) return error.SkipZigTest;
+        try std.testing.expectEqual(CallingConvention{ .nvptx_kernel = .{} }, kernel);
+    }
 
     /// The default Zig calling convention when neither `export` nor `inline` is specified.
     /// This calling convention makes no guarantees about stack alignment, registers, etc.
@@ -383,7 +388,7 @@ pub const CallingConvention = union(enum(u8)) {
 
     // Calling conventions for the `nvptx` and `nvptx64` architectures.
     nvptx_device,
-    nvptx_kernel,
+    nvptx_kernel: NvptxKernelOptions,
 
     // Calling conventions for kernels and shaders on the `spirv32` and `spirv64` architectures.
     spirv_device,
@@ -529,6 +534,37 @@ pub const CallingConvention = union(enum(u8)) {
             /// Save all registers using the CPU's fast register bank.
             bank,
         };
+    };
+
+    /// Options for the `nvptx_kernel` calling convention. A `null` field emits no PTX directive.
+    pub const NvptxKernelOptions = struct {
+        /// `.maxntid`: the maximum number of threads in a work group, as the product of the sizes.
+        max_work_group_size: ?Dim3 = null,
+        /// `.reqntid`: the work group size of every launch. Excludes `max_work_group_size`.
+        required_work_group_size: ?Dim3 = null,
+        /// `.minnctapersm`: the minimum number of work groups per multiprocessor. Needs a work
+        /// group size.
+        min_work_groups_per_sm: ?u32 = null,
+        /// `.reqnctapercluster`: the size of a cluster in work groups. Needs sm_90 or later.
+        cluster_size: ?Dim3 = null,
+        /// `.maxnreg`: the maximum number of registers per thread.
+        max_registers_per_work_item: ?u32 = null,
+
+        pub const Dim3 = struct {
+            x: u32,
+            y: u32 = 1,
+            z: u32 = 1,
+        };
+
+        test NvptxKernelOptions {
+            const options: NvptxKernelOptions = .{};
+            try std.testing.expectEqual(null, options.max_work_group_size);
+            try std.testing.expectEqual(null, options.required_work_group_size);
+            try std.testing.expectEqual(null, options.min_work_groups_per_sm);
+            try std.testing.expectEqual(null, options.cluster_size);
+            try std.testing.expectEqual(null, options.max_registers_per_work_item);
+            try std.testing.expectEqual(Dim3{ .x = 64, .y = 1, .z = 1 }, Dim3{ .x = 64 });
+        }
     };
 
     pub const SpirvKernelOptions = struct {
@@ -1337,6 +1373,7 @@ pub const CompilerBackend = enum(u64) {
     /// The Zig Software Foundation self-hosted implementation of Zig. Backend
     /// originally contributed by Ben Anderman in 2026.
     zsf_spork8 = 14,
+    stage2_nvptx = 15,
 
     _,
 };
@@ -1363,6 +1400,8 @@ pub const panic: type = p: {
         }
         break :p root.panic;
     }
+    // nvptx has no standard error stream, and `std.nvptx.panic` costs registers.
+    if (builtin.cpu.arch.isNvptx()) break :p std.debug.no_panic;
     break :p switch (builtin.zig_backend) {
         .stage2_loongarch,
         .stage2_powerpc,

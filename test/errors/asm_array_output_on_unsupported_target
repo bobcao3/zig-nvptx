@@ -1,0 +1,19 @@
+#zig build-obj {
+--name tmp -fno-emit-bin
+-target x86_64-linux -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+export fn entry() void {
+    var a: [2]u32 = undefined;
+    asm volatile (""
+        : [_] "=r" (a),
+    );
+}
+#}
+#update
+#check errors {
+tmp.zig:4:21: error: invalid inline assembly output type '[2]u32'
+tmp.zig:4:21: note: array types cannot be passed to inline assembly
+#}

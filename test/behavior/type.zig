@@ -296,6 +296,7 @@ test "Type.Union from empty Type.Enum" {
 test "Type.Fn" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_nvptx) return error.SkipZigTest;
 
     const some_opaque = opaque {};
     const some_ptr = *some_opaque;

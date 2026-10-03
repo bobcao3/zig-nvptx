@@ -1,0 +1,17 @@
+#zig build-exe {
+--name tmp
+-target nvptx64-cuda -mcpu sm_80 -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+fn pick(x: u32) ?[:0]const u8 {
+    return if (x == 1) "one" else null;
+}
+
+export fn kernel(out: [*]addrspace(.global) usize, x: u32) callconv(.kernel) void {
+    out[0] = if (pick(x)) |s| s.len else 0;
+}
+#}
+#update
+#check errors

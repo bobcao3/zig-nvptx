@@ -1,0 +1,18 @@
+#zig build-obj {
+--name tmp
+-target nvptx64-cuda -fno-llvm -fno-lld -fno-incremental
+-Mroot=tmp.zig
+#}
+
+#write tmp.zig {
+const Pair = packed struct { x: u4, y: u4 };
+
+export fn entry(p: *align(1:4:1) u4) callconv(.kernel) void {
+    const parent: *Pair = @fieldParentPtr("y", p);
+    parent.x = 1;
+}
+#}
+#update
+#check errors {
+tmp.zig:3:8: error: TODO (PTX): @fieldParentPtr of the packed type 'tmp.Pair'
+#}

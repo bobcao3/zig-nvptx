@@ -49,6 +49,10 @@ pub const Env = enum {
     @"riscv64-linux",
 
     /// - sema
+    /// - `zig build-* -fno-llvm -fno-lld -target nvptx(64)-*`
+    nvptx,
+
+    /// - sema
     /// - `zig build-* -fno-llvm -fno-lld -target spirv(32/64)-* --listen=-`
     spirv,
 
@@ -109,6 +113,7 @@ pub const Env = enum {
                 .riscv64_backend,
                 .sparc64_backend,
                 .spirv_backend,
+                .nvptx_backend,
                 .loongarch_backend,
                 .spork8_backend,
                 .lld_linker,
@@ -121,6 +126,7 @@ pub const Env = enum {
                 .c_linker,
                 .wasm_linker,
                 .spirv_linker,
+                .nvptx_linker,
                 .plan9_linker,
                 .spork8_linker,
                 .jit_command,
@@ -220,6 +226,13 @@ pub const Env = enum {
             .@"riscv64-linux" => switch (feature) {
                 .riscv64_backend,
                 .elf_linker,
+                => true,
+                else => Env.sema.supports(feature),
+            },
+            .nvptx => switch (feature) {
+                .nvptx_backend,
+                .nvptx_linker,
+                .legalize,
                 => true,
                 else => Env.sema.supports(feature),
             },
@@ -330,6 +343,7 @@ pub const Feature = enum {
     riscv64_backend,
     sparc64_backend,
     spirv_backend,
+    nvptx_backend,
     loongarch_backend,
     spork8_backend,
 
@@ -343,6 +357,7 @@ pub const Feature = enum {
     c_linker,
     wasm_linker,
     spirv_linker,
+    nvptx_linker,
     plan9_linker,
     spork8_linker,
 };
